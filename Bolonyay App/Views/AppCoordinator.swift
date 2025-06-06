@@ -110,7 +110,7 @@ struct AppCoordinatorView: View {
                     }
                 
             case .dashboard:
-                DashboardView(coordinator: appCoordinator.onboardingCoordinator)
+                PractitionerDashboardView(coordinator: appCoordinator.onboardingCoordinator)
             }
         }
         .animation(.easeInOut(duration: 0.5), value: appCoordinator.currentState)
