@@ -1,7 +1,4 @@
 # Bolonyay App
-[comment]: <> (Consider adding a compelling banner or GIF showcasing the app's main interface or flow here.)
-[comment]: <> (Example: ![Bolonyay App Showcase](docs/images/app_showcase.gif))
-
 Bolonyay App is a mobile application designed to connect individuals seeking legal assistance (petitioners) with qualified legal professionals (advocates). The app aims to streamline the process of finding and engaging with legal help, providing a modern, accessible platform for legal interactions.
 
 ## Table of Contents
@@ -173,8 +170,5 @@ Contributions are welcome! If you'd like to contribute to the Bolonyay App, plea
 4.  Push your changes to your forked repository.
 5.  Create a pull request to the main repository's `main` or `develop` branch (please specify which branch to target if applicable).
 
-*(More detailed contribution guidelines, coding standards, or issue tracking information can be added here.)*
-
-## License
 
 This project is currently not licensed. *(You can replace this with your chosen license, e.g., MIT License, Apache 2.0 License. If you do, consider adding a `LICENSE` file to the repository as well.)*
