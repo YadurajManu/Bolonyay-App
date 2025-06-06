@@ -169,6 +169,3 @@ Contributions are welcome! If you'd like to contribute to the Bolonyay App, plea
 3.  Make your changes and commit them with clear and descriptive messages.
 4.  Push your changes to your forked repository.
 5.  Create a pull request to the main repository's `main` or `develop` branch (please specify which branch to target if applicable).
-
-
-This project is currently not licensed. *(You can replace this with your chosen license, e.g., MIT License, Apache 2.0 License. If you do, consider adding a `LICENSE` file to the repository as well.)*
