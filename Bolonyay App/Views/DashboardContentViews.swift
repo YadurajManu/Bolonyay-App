@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Case Status Types
 enum CaseStatus: String, CaseIterable {
@@ -399,8 +400,10 @@ class VoiceCaseFilingManager: ObservableObject {
     @Published var filingQuestions: [String] = []
     @Published var userResponses: [String] = []
     @Published var isFilingCase = false
+    @Published var sessionId = UUID().uuidString
     
     private let localizationManager = LocalizationManager.shared
+    private let firebaseManager = FirebaseManager.shared
     private let bhashiniManager = BhashiniManager()
     private let azureOpenAIManager = AzureOpenAIManager()
     
@@ -689,8 +692,100 @@ class VoiceCaseFilingManager: ObservableObject {
             self.caseFilingState = .filed
         }
         
-        // Here you would typically send the case to a backend service
-        // For now, we'll just mark it as filed
+        // Save to Firebase
+        Task {
+            await saveCaseToFirebase()
+        }
+    }
+    
+    private func saveCaseToFirebase() async {
+        do {
+            // Ensure user exists before saving case
+            await ensureUserExists()
+            
+            // Generate case number
+            let caseNumber = generateCaseNumber()
+            
+            // Build conversation summary
+            let conversationSummary = buildFullConversationSummary()
+            
+            // Create session messages for Firebase
+            let sessionMessages = conversationHistory.map { message in
+                FirebaseManager.ConversationSession.SessionMessage(
+                    id: UUID().uuidString,
+                    type: message.type == .userTranscription ? .userTranscription : .aiResponse,
+                    content: message.content,
+                    timestamp: message.timestamp,
+                    language: localizationManager.currentLanguage
+                )
+            }
+            
+            // Save conversation session first
+            let session = try await firebaseManager.saveConversationSession(
+                messages: sessionMessages,
+                language: localizationManager.currentLanguage,
+                azureSessionId: sessionId,
+                caseNumber: caseNumber
+            )
+            
+            // Save case record
+            let caseRecord = try await firebaseManager.saveCase(
+                caseNumber: caseNumber,
+                caseType: caseType,
+                caseDetails: caseDetails,
+                conversationSummary: conversationSummary,
+                filingQuestions: filingQuestions,
+                userResponses: userResponses,
+                sessionId: session.id,
+                azureSessionId: sessionId,
+                language: localizationManager.currentLanguage
+            )
+            
+            print("✅ Case successfully saved to Firebase:")
+            print("   Case Number: \(caseRecord.caseNumber)")
+            print("   Case ID: \(caseRecord.id)")
+            print("   Session ID: \(session.id)")
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to save case to Firebase: \(error.localizedDescription)"
+                self.caseFilingState = .error
+                print("❌ Failed to save case to Firebase: \(error)")
+            }
+        }
+    }
+    
+    private func generateCaseNumber() -> String {
+        let currentYear = Calendar.current.component(.year, from: Date())
+        let randomNumber = Int.random(in: 100000...999999)
+        return "BN\(currentYear)\(randomNumber)"
+    }
+    
+    private func ensureUserExists() async {
+        // Check if user already exists
+        if firebaseManager.getCurrentUser() != nil {
+            return // User already exists
+        }
+        
+        // Create a user for case filing
+        do {
+            let deviceName = UIDevice.current.name
+            let userName = deviceName.isEmpty ? "BoloNyay User" : deviceName
+            
+            let user = try await firebaseManager.createUser(
+                email: nil,
+                name: userName,
+                userType: .petitioner,
+                language: localizationManager.currentLanguage
+            )
+            print("✅ Auto-created user for case filing: \(user.name)")
+        } catch {
+            print("❌ Failed to create user: \(error)")
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to create user account: \(error.localizedDescription)"
+                self.caseFilingState = .error
+            }
+        }
     }
     
     // MARK: - Audio Level Monitoring
@@ -746,6 +841,7 @@ class VoiceCaseFilingManager: ObservableObject {
         filingQuestions.removeAll()
         userResponses.removeAll()
         isFilingCase = false
+        sessionId = UUID().uuidString
         
         recordingTimer?.invalidate()
         recordingTimer = nil
@@ -1233,7 +1329,7 @@ struct CaseFilingView: View {
                     ReadyToFileView(manager: manager)
                     
                 case .filed:
-                    CaseFiledView()
+                    CaseFiledView(manager: manager)
                     
                 case .error:
                     ErrorView(message: manager.errorMessage ?? "Unknown error")
@@ -1598,6 +1694,8 @@ struct ReadyToFileView: View {
 }
 
 struct CaseFiledView: View {
+    @ObservedObject var manager: VoiceCaseFilingManager
+    
     var body: some View {
         VStack(spacing: 24) {
             // Success Animation
@@ -1630,7 +1728,7 @@ struct CaseFiledView: View {
                     
                     Spacer()
                     
-                    Text("BN\(Int.random(in: 100000...999999))")
+                    Text(generateDisplayCaseNumber())
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.green)
                 }
@@ -1660,6 +1758,15 @@ struct CaseFiledView: View {
                 .fill(Color.white.opacity(0.03))
                 .stroke(Color.green.opacity(0.2), lineWidth: 1)
         )
+    }
+    
+    private func generateDisplayCaseNumber() -> String {
+        if !manager.conversationHistory.isEmpty {
+            let currentYear = Calendar.current.component(.year, from: Date())
+            let randomNumber = Int.random(in: 100000...999999)
+            return "BN\(currentYear)\(randomNumber)"
+        }
+        return "BN2024000000"
     }
 }
 
@@ -1727,22 +1834,7 @@ struct ReportsContent: View {
     let isAnimated: Bool
     
     var body: some View {
-        VStack(spacing: 24) {
-            SectionHeader(
-                title: "Reports",
-                subtitle: "View and print your reports",
-                animationDelay: 0.5,
-                isAnimated: isAnimated
-            )
-            
-            ComingSoonView(
-                icon: "chart.bar.fill",
-                title: "Reports & Analytics",
-                message: "Reports functionality will be available soon. You'll be able to view and print detailed reports specific to your cases.",
-                animationDelay: 0.7,
-                isAnimated: isAnimated
-            )
-        }
+        ReportsView()
     }
 }
 
