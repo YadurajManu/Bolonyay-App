@@ -241,6 +241,150 @@ class AzureOpenAIManager {
         throw AzureOpenAIError.invalidResponse
     }
     
+    // MARK: - Legal Case Analysis
+    
+    func analyzeLegalCase(transcription: String, language: String) async throws -> String {
+        let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        
+        let prompt = """
+        You are a compassionate and expert legal advisor AI for BoloNyay app, helping Indian citizens access justice. A user just shared their legal concern with you in \(getLanguageName(for: language)).
+        
+        USER'S CONCERN:
+        "\(transcription)"
+        
+        YOUR ROLE: Act like a caring legal expert who truly understands their situation. Listen carefully, provide helpful guidance, and ask thoughtful questions to better help them.
+        
+        RESPONSE STYLE: Write naturally in \(getLanguageName(for: language)) without using formatting symbols like asterisks, brackets, or mathematical symbols. Use simple, warm, conversational language that shows you understand their concern.
+        
+        STRUCTURE YOUR RESPONSE AS:
+        
+        मैं आपकी स्थिति समझ गया हूँ / I understand your situation
+        [Acknowledge what they shared and show empathy]
+        
+        यह कानूनी मामला है / This appears to be a legal matter related to
+        [Identify the type of case in simple terms with relevant Indian law context]
+        
+        आपकी मुख्य समस्याएं हैं / Your main concerns are
+        [List 2-3 key issues in plain language without bullet points or symbols]
+        
+        मेरी सलाह है / My advice to you is
+        [Provide practical, actionable legal guidance specific to Indian legal system, including relevant acts, procedures, and realistic expectations]
+        
+        आपको तुरंत ये काम करने चाहिए / You should immediately do these things
+        [Give 3-4 specific action steps with timelines and requirements]
+        
+        महत्वपूर्ण बातें / Important things to remember
+        [Share critical information about deadlines, costs, rights, required documents]
+        
+        मुझे आपसे कुछ और जानना है / I need to know more from you
+        [Ask 3-4 intelligent, specific questions to better understand their case and provide more targeted help]
+        
+        आगे क्या करना है / What to do next
+        [Clear next steps for using BoloNyay app or legal system]
+        
+        IMPORTANT GUIDELINES:
+        - Write in pure conversational \(getLanguageName(for: language)) without any English mixing unless necessary for legal terms
+        - NO formatting symbols, asterisks, bullets, or mathematical characters
+        - Be warm, understanding, and encouraging
+        - Provide specific legal guidance based on Indian laws
+        - Ask smart questions that show you're thinking deeply about their case
+        - Make them feel heard and supported
+        """
+        
+        let requestBody: [String: Any] = [
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "You are a helpful legal assistant AI for Indian legal system. You provide preliminary legal guidance and analysis in simple, understandable language."
+                ],
+                [
+                    "role": "user", 
+                    "content": prompt
+                ]
+            ],
+            "max_tokens": 1200,
+            "temperature": 0.3
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("🤖 Sending case analysis request to Azure OpenAI...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        print("📡 Azure OpenAI Response Code: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("❌ Azure OpenAI Error: \(httpResponse.statusCode) - \(errorMessage)")
+            throw AzureOpenAIError.apiError(httpResponse.statusCode, errorMessage)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        // Parse the response to extract the case analysis
+        if let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            
+            print("✅ Case analysis received from Azure OpenAI")
+            let cleanedContent = cleanFormattingSymbols(content)
+            return cleanedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        throw AzureOpenAIError.invalidResponse
+    }
+    
+    private func getLanguageName(for code: String) -> String {
+        switch code.lowercased() {
+        case "hi": return "Hindi"
+        case "gu": return "Gujarati"
+        case "ur": return "Urdu"
+        case "mr": return "Marathi"
+        default: return "English"
+        }
+    }
+    
+    private func cleanFormattingSymbols(_ text: String) -> String {
+        var cleanedText = text
+        
+        // Remove common formatting symbols
+        cleanedText = cleanedText.replacingOccurrences(of: "**", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "*", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "###", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "##", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "#", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "```", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "`", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "---", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "--", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "___", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "__", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "~~", with: "")
+        
+        // Remove markdown-style brackets and parentheses formatting
+        cleanedText = cleanedText.replacingOccurrences(of: "[", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "]", with: "")
+        
+        // Clean up multiple spaces and line breaks
+        cleanedText = cleanedText.replacingOccurrences(of: "  ", with: " ")
+        cleanedText = cleanedText.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        
+        return cleanedText
+    }
+    
     func validateDetectedLanguage(_ detectedLanguage: String) async throws -> String {
         let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
         
@@ -392,9 +536,9 @@ class BhashiniManager: NSObject, ObservableObject {
             throw BhashiniError.microphonePermissionDenied
         }
         
-        // 2. Record audio for 3 seconds
-        let audioData = try await recordAudio(duration: 3.0)
-        print("✅ Audio recorded successfully")
+        // 2. Record audio for 15 seconds
+        let audioData = try await recordAudio(duration: 15.0)
+        print("✅ Audio recorded successfully (15 seconds)")
         
         // 3. Use Bhashini ASR (Hindi model) to get transcription
         let transcription = try await performASRTranscription(audioData: audioData)

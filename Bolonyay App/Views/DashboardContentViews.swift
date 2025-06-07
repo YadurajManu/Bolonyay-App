@@ -361,24 +361,612 @@ struct EmptyStateView: View {
 // MARK: - New Case Content
 struct NewCaseContent: View {
     let isAnimated: Bool
+    @StateObject private var voiceCaseManager = VoiceCaseFilingManager()
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         VStack(spacing: 24) {
             SectionHeader(
-                title: "File New Case",
-                subtitle: "Start a new case filing process",
+                title: localizationManager.text("new_case"),
+                subtitle: "Voice-driven case filing system",
                 animationDelay: 0.5,
                 isAnimated: isAnimated
             )
             
-            ComingSoonView(
-                icon: "plus.rectangle.fill",
-                title: "New Case Filing",
-                message: "Case filing functionality will be available soon. You'll be able to file new cases with all required documents.",
-                animationDelay: 0.7,
-                isAnimated: isAnimated
-            )
+            VoiceCaseFilingView(manager: voiceCaseManager)
+                .opacity(isAnimated ? 1.0 : 0.0)
+                .scaleEffect(isAnimated ? 1.0 : 0.95)
+                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.7), value: isAnimated)
         }
+    }
+}
+
+// MARK: - Voice Case Filing Manager
+class VoiceCaseFilingManager: ObservableObject {
+    @Published var isRecording = false
+    @Published var isProcessing = false
+    @Published var transcription = ""
+    @Published var caseAnalysis = ""
+    @Published var errorMessage: String?
+    @Published var recordingState: RecordingState = .idle
+    @Published var audioLevel: Float = 0.0
+    @Published var recordingDuration: TimeInterval = 0.0
+    @Published var conversationHistory: [ConversationMessage] = []
+    @Published var currentTranscription = ""
+    @Published var caseFilingState: CaseFilingState = .notStarted
+    @Published var caseType = ""
+    @Published var caseDetails = ""
+    @Published var filingQuestions: [String] = []
+    @Published var userResponses: [String] = []
+    @Published var isFilingCase = false
+    
+    private let localizationManager = LocalizationManager.shared
+    private let bhashiniManager = BhashiniManager()
+    private let azureOpenAIManager = AzureOpenAIManager()
+    
+    private var recordingTimer: Timer?
+    private var audioLevelTimer: Timer?
+    private let maxRecordingDuration: TimeInterval = 15.0
+    
+    enum RecordingState {
+        case idle
+        case recording
+        case processing
+        case completed
+        case error
+    }
+    
+    enum CaseFilingState {
+        case notStarted
+        case analyzing
+        case questionsReady
+        case collectingInfo
+        case readyToFile
+        case filed
+        case error
+    }
+    
+    struct ConversationMessage {
+        let id = UUID()
+        let type: MessageType
+        let content: String
+        let timestamp: Date
+        
+        enum MessageType {
+            case userTranscription
+            case aiResponse
+        }
+    }
+    
+    // MARK: - Voice Recording Flow
+    
+    func startVoiceRecording() {
+        print("🎤 Starting voice recording...")
+        
+        DispatchQueue.main.async {
+            self.recordingState = .recording
+            self.isRecording = true
+            self.errorMessage = nil
+            self.currentTranscription = ""
+            self.recordingDuration = 0.0
+        }
+        
+        // Start recording timer with auto-stop at max duration
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            self.recordingDuration += 0.1
+            
+            // Auto-stop at max duration
+            if self.recordingDuration >= self.maxRecordingDuration {
+                self.stopVoiceRecording()
+            }
+        }
+        
+        // Start audio level monitoring
+        startAudioLevelMonitoring()
+        
+        // Start actual recording in background
+        Task {
+            await performVoiceRecording()
+        }
+    }
+    
+    func stopVoiceRecording() {
+        print("⏹️ Stopping voice recording...")
+        
+        DispatchQueue.main.async {
+            self.isRecording = false
+            self.recordingState = .processing
+        }
+        
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        stopAudioLevelMonitoring()
+    }
+    
+    private func performVoiceRecording() async {
+        do {
+            // Wait for recording to complete
+            while isRecording {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            }
+            
+            // Step 1: Get transcription from Bhashini ASR
+            print("📝 Getting transcription from Bhashini ASR (Language: \(localizationManager.currentLanguage))...")
+            
+            DispatchQueue.main.async {
+                self.recordingState = .processing
+                self.isProcessing = true
+            }
+            
+            let transcriptionText = try await bhashiniManager.getTranscriptionFromAudio()
+            
+            DispatchQueue.main.async {
+                self.currentTranscription = transcriptionText
+                print("✅ Transcription received: '\(transcriptionText)'")
+                
+                // Add user message to conversation history
+                let userMessage = ConversationMessage(
+                    type: .userTranscription,
+                    content: transcriptionText,
+                    timestamp: Date()
+                )
+                self.conversationHistory.append(userMessage)
+            }
+            
+            // Step 2: Send to Azure OpenAI for case analysis with conversation context
+            await analyzeCaseWithAI(transcription: transcriptionText)
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = error.localizedDescription
+                self.recordingState = .error
+                self.isProcessing = false
+                print("❌ Voice recording failed: \(error)")
+            }
+        }
+    }
+    
+    private func analyzeCaseWithAI(transcription: String) async {
+        do {
+            print("🤖 Analyzing with Azure OpenAI (conversation context: \(conversationHistory.count) messages)...")
+            
+            // Build conversation context
+            let conversationContext = buildConversationContext()
+            let fullTranscription = conversationContext.isEmpty ? transcription : "\(conversationContext)\n\nLatest message: \(transcription)"
+            
+            let analysis = try await azureOpenAIManager.analyzeLegalCase(transcription: fullTranscription, language: localizationManager.currentLanguage)
+            
+            DispatchQueue.main.async {
+                self.caseAnalysis = analysis
+                self.recordingState = .completed
+                self.isProcessing = false
+                print("✅ Legal analysis completed")
+                
+                // Add AI response to conversation history
+                let aiMessage = ConversationMessage(
+                    type: .aiResponse,
+                    content: analysis,
+                    timestamp: Date()
+                )
+                self.conversationHistory.append(aiMessage)
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to analyze case: \(error.localizedDescription)"
+                self.recordingState = .error
+                self.isProcessing = false
+                print("❌ Case analysis failed: \(error)")
+            }
+        }
+    }
+    
+    private func buildConversationContext() -> String {
+        guard !conversationHistory.isEmpty else { return "" }
+        
+        var context = "Previous conversation:\n"
+        
+        // Include last few messages for context (limit to avoid token overflow)
+        let recentMessages = Array(conversationHistory.suffix(6))
+        
+        for message in recentMessages {
+            switch message.type {
+            case .userTranscription:
+                context += "User: \(message.content)\n"
+            case .aiResponse:
+                context += "Legal Expert: \(message.content)\n"
+            }
+        }
+        
+        return context
+    }
+    
+    // MARK: - Audio Level Monitoring
+    
+    private func startAudioLevelMonitoring() {
+        audioLevelTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            // Simulate audio level for visual feedback
+            self.audioLevel = Float.random(in: 0.1...0.9)
+        }
+    }
+    
+    private func stopAudioLevelMonitoring() {
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = nil
+        audioLevel = 0.0
+    }
+    
+    // MARK: - Conversation Management
+    
+    func continueConversation() {
+        print("💬 Continuing conversation...")
+        recordingState = .idle
+        errorMessage = nil
+        // Keep conversation history and case analysis
+        // Reset only recording-specific states
+        isRecording = false
+        isProcessing = false
+        currentTranscription = ""
+        recordingDuration = 0.0
+        audioLevel = 0.0
+        
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        stopAudioLevelMonitoring()
+    }
+    
+    func reset() {
+        print("🔄 Resetting conversation...")
+        recordingState = .idle
+        isRecording = false
+        isProcessing = false
+        currentTranscription = ""
+        caseAnalysis = ""
+        conversationHistory.removeAll()
+        errorMessage = nil
+        recordingDuration = 0.0
+        audioLevel = 0.0
+        
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        stopAudioLevelMonitoring()
+    }
+}
+
+// MARK: - Voice Case Filing View
+struct VoiceCaseFilingView: View {
+    @ObservedObject var manager: VoiceCaseFilingManager
+    @EnvironmentObject var localizationManager: LocalizationManager
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Voice Recording Interface
+            VStack(spacing: 20) {
+                // Recording Button with Visual Feedback
+                VStack(spacing: 16) {
+                    ZStack {
+                        // Outer pulse ring
+                        if manager.isRecording {
+                            Circle()
+                                .stroke(Color.red.opacity(0.3), lineWidth: 4)
+                                .frame(width: 140, height: 140)
+                                .scaleEffect(manager.isRecording ? 1.2 : 1.0)
+                                .opacity(manager.isRecording ? 0.0 : 1.0)
+                                .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false), value: manager.isRecording)
+                        }
+                        
+                        // Main recording button
+                        Button(action: {
+                            if manager.isRecording {
+                                manager.stopVoiceRecording()
+                            } else if manager.recordingState == .completed {
+                                manager.continueConversation()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    manager.startVoiceRecording()
+                                }
+                            } else {
+                                manager.startVoiceRecording()
+                            }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(manager.isRecording ? Color.red : Color.blue)
+                                    .frame(width: 100, height: 100)
+                                    .shadow(color: (manager.isRecording ? Color.red : Color.blue).opacity(0.3), radius: 10, x: 0, y: 0)
+                                
+                                // Audio level visualization
+                                if manager.isRecording {
+                                    Circle()
+                                        .fill(Color.white.opacity(0.3))
+                                        .frame(width: 100 * CGFloat(manager.audioLevel), height: 100 * CGFloat(manager.audioLevel))
+                                        .animation(.easeInOut(duration: 0.1), value: manager.audioLevel)
+                                }
+                                
+                                Image(systemName: manager.isRecording ? "stop.fill" : "mic.fill")
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .scaleEffect(manager.isRecording ? 1.1 : 1.0)
+                                    .animation(.easeInOut(duration: 0.2), value: manager.isRecording)
+                            }
+                        }
+                        .disabled(manager.isProcessing)
+                        .buttonStyle(ScaleButtonStyle())
+                    }
+                    
+                    // Recording State Text
+                    VStack(spacing: 4) {
+                        Text(getRecordingStateText())
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        if manager.isRecording {
+                            Text(formatDuration(manager.recordingDuration))
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.white.opacity(0.05))
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            
+            // Conversation History Display
+            if !manager.conversationHistory.isEmpty && manager.conversationHistory.count > 2 {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "message.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.purple)
+                        
+                        Text("Conversation History")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        Text("\(manager.conversationHistory.count/2) exchanges")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            // Show only the most recent exchanges (excluding the current one)
+                            let historyToShow = Array(manager.conversationHistory.dropLast(2).suffix(4))
+                            
+                            ForEach(historyToShow, id: \.id) { message in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: message.type == .userTranscription ? "person.fill" : "brain.head.profile")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(message.type == .userTranscription ? .blue : .green)
+                                        .frame(width: 20)
+                                    
+                                    Text(message.content)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .lineLimit(3)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 120)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white.opacity(0.02))
+                            .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+            
+            // Current Transcription Display
+            if !manager.currentTranscription.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "text.quote")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.blue)
+                        
+                        Text("Latest Message")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                    }
+                    
+                    Text(manager.currentTranscription)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.03))
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+            
+            // AI Analysis Display
+            if !manager.caseAnalysis.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.green)
+                        
+                        Text("Legal Expert Response")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                    }
+                    
+                    Text(manager.caseAnalysis)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.03))
+                                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+            
+            // Error Display
+            if let errorMessage = manager.errorMessage {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.red)
+                        
+                        Text("Error")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                    }
+                    
+                    Text(errorMessage)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.03))
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+            
+            // Processing Indicator
+            if manager.isProcessing {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                        .scaleEffect(1.2)
+                    
+                    Text("Understanding your case and preparing guidance...")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.vertical, 20)
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+            
+            // Action Buttons
+            if manager.recordingState != .idle {
+                HStack(spacing: 16) {
+                    // Continue/Record Again Button
+                    if manager.recordingState == .completed {
+                        Button(action: {
+                            manager.continueConversation()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                manager.startVoiceRecording()
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 14, weight: .medium))
+                                
+                                Text("Continue Talking")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.2))
+                                    .stroke(Color.blue.opacity(0.5), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                    }
+                    
+                    // Reset Button
+                    Button(action: {
+                        withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                            manager.reset()
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .medium))
+                            
+                            Text("New Case")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.1))
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                }
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .scale.combined(with: .opacity)
+                ))
+            }
+        }
+        .animation(.spring(duration: 0.5, bounce: 0.3), value: manager.recordingState)
+    }
+    
+    private func getRecordingStateText() -> String {
+        switch manager.recordingState {
+        case .idle:
+            if manager.conversationHistory.isEmpty {
+                return "Tap to record your case (15 seconds)"
+            } else {
+                return "Tap to continue conversation (15 seconds)"
+            }
+        case .recording:
+            return "Recording... Speak clearly (15 sec max)"
+        case .processing:
+            return "Understanding your message..."
+        case .completed:
+            return "Tap to continue conversation"
+        case .error:
+            return "Error occurred"
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -405,8 +993,6 @@ struct DocumentsContent: View {
         }
     }
 }
-
-
 
 // MARK: - Reports Content
 struct ReportsContent: View {
