@@ -415,7 +415,7 @@ class VoiceCaseFilingManager: ObservableObject {
         case completed
         case error
     }
-    
+        
     enum CaseFilingState {
         case notStarted
         case analyzing
@@ -581,6 +581,118 @@ class VoiceCaseFilingManager: ObservableObject {
         return context
     }
     
+    // MARK: - Case Filing
+    
+    func startCaseFiling() {
+        print("📋 Starting case filing process...")
+        
+        DispatchQueue.main.async {
+            self.caseFilingState = .analyzing
+            self.isFilingCase = true
+            self.errorMessage = nil
+        }
+        
+        Task {
+            await analyzeCaseForFiling()
+        }
+    }
+    
+    private func analyzeCaseForFiling() async {
+        do {
+            print("🔍 Analyzing conversation for case filing...")
+            
+            // Build full conversation context
+            let conversationSummary = buildFullConversationSummary()
+            
+            let caseAnalysis = try await azureOpenAIManager.analyzeCaseForFiling(
+                conversationSummary: conversationSummary,
+                language: localizationManager.currentLanguage
+            )
+            
+            DispatchQueue.main.async {
+                self.parseCaseAnalysis(caseAnalysis)
+                self.caseFilingState = .questionsReady
+                print("✅ Case analysis for filing completed")
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to analyze case for filing: \(error.localizedDescription)"
+                self.caseFilingState = .error
+                print("❌ Case filing analysis failed: \(error)")
+            }
+        }
+    }
+    
+    private func buildFullConversationSummary() -> String {
+        var summary = "Complete conversation summary:\n\n"
+        
+        for message in conversationHistory {
+            switch message.type {
+            case .userTranscription:
+                summary += "User said: \(message.content)\n\n"
+            case .aiResponse:
+                summary += "Legal Expert responded: \(message.content)\n\n"
+            }
+        }
+        
+        return summary
+    }
+    
+    private func parseCaseAnalysis(_ analysis: String) {
+        // Parse the AI response to extract case type, details, and questions
+        let lines = analysis.components(separatedBy: .newlines)
+        var currentSection = ""
+        var questions: [String] = []
+        
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if trimmedLine.contains("CASE TYPE:") {
+                caseType = trimmedLine.replacingOccurrences(of: "CASE TYPE:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if trimmedLine.contains("CASE DETAILS:") {
+                currentSection = "details"
+            } else if trimmedLine.contains("QUESTIONS:") {
+                currentSection = "questions"
+            } else if !trimmedLine.isEmpty {
+                if currentSection == "details" && caseDetails.isEmpty {
+                    caseDetails = trimmedLine
+                } else if currentSection == "questions" && trimmedLine.hasPrefix("-") {
+                    questions.append(trimmedLine.replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+            }
+        }
+        
+        filingQuestions = questions
+        userResponses = Array(repeating: "", count: questions.count)
+    }
+    
+    func submitCaseResponse(_ response: String, for questionIndex: Int) {
+        guard questionIndex < userResponses.count else { return }
+        
+        DispatchQueue.main.async {
+            self.userResponses[questionIndex] = response
+            
+            // Check if all questions are answered
+            let allAnswered = self.userResponses.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            
+            if allAnswered {
+                self.caseFilingState = .readyToFile
+            }
+        }
+    }
+    
+    func finalizeCase() {
+        print("✅ Finalizing case filing...")
+        
+        DispatchQueue.main.async {
+            self.caseFilingState = .filed
+        }
+        
+        // Here you would typically send the case to a backend service
+        // For now, we'll just mark it as filed
+    }
+    
     // MARK: - Audio Level Monitoring
     
     private func startAudioLevelMonitoring() {
@@ -626,6 +738,14 @@ class VoiceCaseFilingManager: ObservableObject {
         errorMessage = nil
         recordingDuration = 0.0
         audioLevel = 0.0
+        
+        // Reset case filing state
+        caseFilingState = .notStarted
+        caseType = ""
+        caseDetails = ""
+        filingQuestions.removeAll()
+        userResponses.removeAll()
+        isFilingCase = false
         
         recordingTimer?.invalidate()
         recordingTimer = nil
@@ -882,21 +1002,47 @@ struct VoiceCaseFilingView: View {
             }
             
             // Action Buttons
-            if manager.recordingState != .idle {
-                HStack(spacing: 16) {
-                    // Continue/Record Again Button
-                    if manager.recordingState == .completed {
+            if manager.recordingState != .idle && !manager.isFilingCase {
+                VStack(spacing: 12) {
+                    HStack(spacing: 16) {
+                        // Continue/Record Again Button
+                        if manager.recordingState == .completed {
+                            Button(action: {
+                                manager.continueConversation()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    manager.startVoiceRecording()
+                                }
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "mic.fill")
+                                        .font(.system(size: 14, weight: .medium))
+                                    
+                                    Text("Continue Talking")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.blue.opacity(0.2))
+                                        .stroke(Color.blue.opacity(0.5), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                        }
+                        
+                        // Reset Button
                         Button(action: {
-                            manager.continueConversation()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                manager.startVoiceRecording()
+                            withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                                manager.reset()
                             }
                         }) {
                             HStack(spacing: 8) {
-                                Image(systemName: "mic.fill")
+                                Image(systemName: "arrow.clockwise")
                                     .font(.system(size: 14, weight: .medium))
                                 
-                                Text("Continue Talking")
+                                Text("New Case")
                                     .font(.system(size: 16, weight: .semibold))
                             }
                             .foregroundColor(.white)
@@ -904,41 +1050,76 @@ struct VoiceCaseFilingView: View {
                             .padding(.vertical, 12)
                             .background(
                                 Capsule()
-                                    .fill(Color.blue.opacity(0.2))
-                                    .stroke(Color.blue.opacity(0.5), lineWidth: 1)
+                                    .fill(Color.white.opacity(0.1))
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
                             )
                         }
                         .buttonStyle(ScaleButtonStyle())
                     }
                     
-                    // Reset Button
-                    Button(action: {
-                        withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                            manager.reset()
+                    // File Case Button (Premium Feature)
+                    if manager.recordingState == .completed && !manager.conversationHistory.isEmpty {
+                        Button(action: {
+                            withAnimation(.spring(duration: 0.6, bounce: 0.3)) {
+                                manager.startCaseFiling()
+                            }
+                        }) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.orange.opacity(0.2))
+                                        .frame(width: 32, height: 32)
+                                    
+                                    Image(systemName: "doc.text.fill")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.orange)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("File This Case")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(.orange)
+                                    
+                                    Text("Convert conversation to legal filing")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.orange.opacity(0.8))
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.orange.opacity(0.05))
+                                    .stroke(Color.orange.opacity(0.3), lineWidth: 2)
+                                    .shadow(color: Color.orange.opacity(0.2), radius: 8, x: 0, y: 4)
+                            )
                         }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .medium))
-                            
-                            Text("New Case")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.1))
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        )
+                        .buttonStyle(ScaleButtonStyle())
+                        .transition(.asymmetric(
+                            insertion: .scale.combined(with: .opacity),
+                            removal: .scale.combined(with: .opacity)
+                        ))
                     }
-                    .buttonStyle(ScaleButtonStyle())
                 }
                 .transition(.asymmetric(
                     insertion: .scale.combined(with: .opacity),
                     removal: .scale.combined(with: .opacity)
                 ))
+            }
+            
+            // Case Filing Interface
+            if manager.isFilingCase {
+                CaseFilingView(manager: manager)
+                    .transition(.asymmetric(
+                        insertion: .scale.combined(with: .opacity),
+                        removal: .scale.combined(with: .opacity)
+                    ))
             }
         }
         .animation(.spring(duration: 0.5, bounce: 0.3), value: manager.recordingState)
@@ -967,6 +1148,553 @@ struct VoiceCaseFilingView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Case Filing View
+struct CaseFilingView: View {
+    @ObservedObject var manager: VoiceCaseFilingManager
+    @EnvironmentObject var localizationManager: LocalizationManager
+    @State private var currentQuestionIndex = 0
+    @State private var answerText = ""
+    @State private var isAnsweringVoice = false
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Header
+            VStack(spacing: 12) {
+                HStack {
+                    ZStack {
+                        Circle()
+                            .fill(Color.orange.opacity(0.2))
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.orange)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Case Filing")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Text("Let's prepare your legal case")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+                            manager.isFilingCase = false
+                            manager.caseFilingState = .notStarted
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                
+                // Progress Bar
+                if manager.caseFilingState == .questionsReady || manager.caseFilingState == .collectingInfo {
+                    ProgressView(value: Double(manager.userResponses.filter { !$0.isEmpty }.count), total: Double(manager.filingQuestions.count))
+                        .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                        .scaleEffect(y: 2)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.orange.opacity(0.05))
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            )
+            
+            // Content based on state
+            Group {
+                switch manager.caseFilingState {
+                case .analyzing:
+                    AnalyzingView()
+                    
+                case .questionsReady, .collectingInfo:
+                    QuestionnaireView(
+                        manager: manager,
+                        currentQuestionIndex: $currentQuestionIndex,
+                        answerText: $answerText,
+                        isAnsweringVoice: $isAnsweringVoice
+                    )
+                    
+                case .readyToFile:
+                    ReadyToFileView(manager: manager)
+                    
+                case .filed:
+                    CaseFiledView()
+                    
+                case .error:
+                    ErrorView(message: manager.errorMessage ?? "Unknown error")
+                    
+                default:
+                    EmptyView()
+                }
+            }
+        }
+        .animation(.spring(duration: 0.5, bounce: 0.3), value: manager.caseFilingState)
+    }
+}
+
+// MARK: - Case Filing Sub-Views
+
+struct AnalyzingView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                .scaleEffect(1.5)
+            
+            VStack(spacing: 8) {
+                Text("Analyzing Your Case")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Text("Our AI is reviewing your conversation to identify case type and prepare filing questions...")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(40)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+struct QuestionnaireView: View {
+    @ObservedObject var manager: VoiceCaseFilingManager
+    @Binding var currentQuestionIndex: Int
+    @Binding var answerText: String
+    @Binding var isAnsweringVoice: Bool
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Case Summary
+            if !manager.caseType.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "briefcase.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.blue)
+                        
+                        Text("Case Identified")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(manager.caseType)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.blue)
+                        
+                        if !manager.caseDetails.isEmpty {
+                            Text(manager.caseDetails)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.blue.opacity(0.05))
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
+            }
+            
+            // Questions Section
+            if !manager.filingQuestions.isEmpty {
+                VStack(spacing: 16) {
+                    HStack {
+                        Text("Additional Information Required")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        Text("\(manager.userResponses.filter { !$0.isEmpty }.count)/\(manager.filingQuestions.count)")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.orange)
+                    }
+                    
+                    // Question Cards
+                    ForEach(Array(manager.filingQuestions.enumerated()), id: \.offset) { index, question in
+                        QuestionCard(
+                            question: question,
+                            answer: index < manager.userResponses.count ? manager.userResponses[index] : "",
+                            isAnswered: index < manager.userResponses.count && !manager.userResponses[index].isEmpty,
+                            questionNumber: index + 1,
+                            onAnswerSubmit: { answer in
+                                manager.submitCaseResponse(answer, for: index)
+                            }
+                        )
+                    }
+                }
+            }
+            
+            // Action Buttons
+            if manager.caseFilingState == .readyToFile {
+                Button(action: {
+                    manager.finalizeCase()
+                }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18, weight: .bold))
+                        
+                        Text("File Case Now")
+                            .font(.system(size: 18, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 16)
+                    .background(
+                        Capsule()
+                            .fill(Color.green)
+                            .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
+                    )
+                }
+                .buttonStyle(ScaleButtonStyle())
+            }
+        }
+    }
+}
+
+struct QuestionCard: View {
+    let question: String
+    let answer: String
+    let isAnswered: Bool
+    let questionNumber: Int
+    let onAnswerSubmit: (String) -> Void
+    
+    @State private var textAnswer = ""
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Question Header
+            HStack {
+                ZStack {
+                    Circle()
+                        .fill(isAnswered ? Color.green.opacity(0.2) : Color.orange.opacity(0.2))
+                        .frame(width: 28, height: 28)
+                    
+                    if isAnswered {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.green)
+                    } else {
+                        Text("\(questionNumber)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.orange)
+                    }
+                }
+                
+                Text(question)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(isExpanded ? nil : 2)
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            
+            // Answer Section
+            if isExpanded || !answer.isEmpty {
+                VStack(spacing: 12) {
+                    if !answer.isEmpty {
+                        HStack {
+                            Text("Your Answer:")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.green)
+                            
+                            Spacer()
+                        }
+                        
+                        Text(answer)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.green.opacity(0.05))
+                                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                            )
+                    } else if isExpanded {
+                        VStack(spacing: 8) {
+                            TextField("Type your answer...", text: $textAnswer)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.system(size: 14))
+                            
+                            HStack {
+                                Spacer()
+                                
+                                Button(action: {
+                                    if !textAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        onAnswerSubmit(textAnswer)
+                                        textAnswer = ""
+                                        withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
+                                            isExpanded = false
+                                        }
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .bold))
+                                        
+                                        Text("Submit")
+                                            .font(.system(size: 14, weight: .semibold))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.orange)
+                                    )
+                                }
+                                .disabled(textAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .buttonStyle(ScaleButtonStyle())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.03))
+                .stroke(isAnswered ? Color.green.opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .onAppear {
+            textAnswer = answer
+        }
+    }
+}
+
+struct ReadyToFileView: View {
+    @ObservedObject var manager: VoiceCaseFilingManager
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Success Icon
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundColor(.green)
+            }
+            
+            VStack(spacing: 12) {
+                Text("Ready to File!")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Text("All required information has been collected. Your case is ready for filing.")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+            
+            // Case Summary
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Case Summary")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Type:")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Spacer()
+                        
+                        Text(manager.caseType)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Details:")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Text(manager.caseDetails)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    
+                    Text("Responses: \(manager.userResponses.filter { !$0.isEmpty }.count) completed")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.green)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.03))
+                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                )
+            }
+            
+            // File Button
+            Button(action: {
+                manager.finalizeCase()
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 18, weight: .bold))
+                    
+                    Text("File Case Now")
+                        .font(.system(size: 18, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
+                .background(
+                    Capsule()
+                        .fill(Color.green)
+                        .shadow(color: Color.green.opacity(0.3), radius: 8, x: 0, y: 4)
+                )
+            }
+            .buttonStyle(ScaleButtonStyle())
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+struct CaseFiledView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            // Success Animation
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 100, height: 100)
+                
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 50, weight: .bold))
+                    .foregroundColor(.green)
+            }
+            
+            VStack(spacing: 12) {
+                Text("Case Filed Successfully!")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.green)
+                
+                Text("Your case has been submitted to the legal system. You will receive updates on the progress.")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+            
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Case ID:")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Spacer()
+                    
+                    Text("BN\(Int.random(in: 100000...999999))")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.green)
+                }
+                
+                HStack {
+                    Text("Filed on:")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Spacer()
+                    
+                    Text(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .short))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.green.opacity(0.05))
+                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+struct ErrorView: View {
+    let message: String
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(Color.red.opacity(0.2))
+                    .frame(width: 60, height: 60)
+                
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundColor(.red)
+            }
+            
+            VStack(spacing: 8) {
+                Text("Error")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.red)
+                
+                Text(message)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.red.opacity(0.05))
+                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+        )
     }
 }
 

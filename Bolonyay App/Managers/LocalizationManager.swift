@@ -347,6 +347,102 @@ class AzureOpenAIManager {
         throw AzureOpenAIError.invalidResponse
     }
     
+    func analyzeCaseForFiling(conversationSummary: String, language: String) async throws -> String {
+        let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        
+        let prompt = """
+        You are a legal case filing expert for the Indian legal system. A user has had a conversation about their legal issue and now wants to formally file a case.
+        
+        CONVERSATION SUMMARY:
+        \(conversationSummary)
+        
+        YOUR TASK: Analyze this conversation and prepare for formal case filing by:
+        
+        1. IDENTIFYING THE CASE TYPE - Determine what type of legal case this is (Civil, Criminal, Family, Property, Consumer, Labor, etc.)
+        
+        2. EXTRACTING KEY DETAILS - Summarize the main legal issue in one clear sentence
+        
+        3. GENERATING ESSENTIAL QUESTIONS - Create 5-6 specific questions needed to file this type of case properly
+        
+        RESPONSE FORMAT (use exact headers):
+        
+        CASE TYPE: [Specific type like "Property Dispute", "Domestic Violence", "Consumer Complaint", etc.]
+        
+        CASE DETAILS: [One clear sentence summarizing the main legal issue]
+        
+        QUESTIONS:
+        - [Question 1 - must be specific and necessary for this case type]
+        - [Question 2 - focus on facts, dates, evidence needed]
+        - [Question 3 - about parties involved, relationships]
+        - [Question 4 - about damages, relief sought]
+        - [Question 5 - about supporting documents/evidence]
+        - [Question 6 - about urgency/timeline requirements]
+        
+        GUIDELINES:
+        - Ask only essential questions for filing this specific case type
+        - Questions should help gather missing information not covered in conversation
+        - Focus on legal requirements, evidence, parties, timeline, and relief sought
+        - Keep questions clear and specific to Indian legal procedures
+        - Ensure questions help build a strong case foundation
+        
+        Write in \(getLanguageName(for: language)) language maintaining the exact format above.
+        """
+        
+        let requestBody: [String: Any] = [
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "You are a legal case filing expert for Indian legal system. You analyze conversations and prepare structured case filing questionnaires."
+                ],
+                [
+                    "role": "user", 
+                    "content": prompt
+                ]
+            ],
+            "max_tokens": 800,
+            "temperature": 0.2
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("📋 Sending case filing analysis request to Azure OpenAI...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        print("📡 Azure OpenAI Case Filing Response Code: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("❌ Azure OpenAI Case Filing Error: \(httpResponse.statusCode) - \(errorMessage)")
+            throw AzureOpenAIError.apiError(httpResponse.statusCode, errorMessage)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        // Parse the response to extract the case filing analysis
+        if let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            
+            print("✅ Case filing analysis received from Azure OpenAI")
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        throw AzureOpenAIError.invalidResponse
+    }
+    
     private func getLanguageName(for code: String) -> String {
         switch code.lowercased() {
         case "hi": return "Hindi"
