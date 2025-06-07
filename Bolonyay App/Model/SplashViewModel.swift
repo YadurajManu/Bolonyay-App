@@ -211,7 +211,6 @@ class SplashViewModel: ObservableObject {
         // Phase 14: Navigate to main content
         DispatchQueue.main.asyncAfter(deadline: .now() + (fluidOverlapDelay * 8.5)) {
             NotificationCenter.default.post(name: NSNotification.Name("SplashCompleted"), object: nil)
-            self.showMainContent = true
         }
     }
     

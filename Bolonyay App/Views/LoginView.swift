@@ -15,6 +15,7 @@ struct LoginView: View {
     @State private var showPrivacyPolicy = false
     @State private var showTermsConditions = false
     @StateObject private var authManager = AuthenticationManager()
+    @StateObject private var localizationManager = LocalizationManager.shared
     
 
     
@@ -50,7 +51,7 @@ struct LoginView: View {
                     .frame(height: 60)
                 
                 // Title
-                Text("Set Up Account to Save Your Progress")
+                Text(localizationManager.localizedString(for: "setup_account_title"))
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
@@ -62,17 +63,17 @@ struct LoginView: View {
                 
                 // Description
                 VStack(spacing: 4) {
-                    Text("Sign in or register to use your BoloNyay services on an")
+                    Text(localizationManager.localizedString(for: "signin_description_1"))
                         .font(.body)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                     
-                    Text("unlimited number of devices:")
+                    Text(localizationManager.localizedString(for: "signin_description_2"))
                         .font(.body)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                     
-                    Text("Mobile • Desktop")
+                    Text(localizationManager.localizedString(for: "signin_description_3"))
                         .font(.body)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -177,7 +178,7 @@ struct LoginView: View {
                             }
                         }) {
                             HStack(spacing: 12) {
-                                Text("Other Sign-in Options")
+                                Text(localizationManager.localizedString(for: "other_signin_options"))
                                     .font(.system(size: 17, weight: .medium))
                                     .foregroundColor(.white)
                                 
@@ -240,7 +241,7 @@ struct LoginView: View {
                                                      .foregroundColor(.black)
                                              }
                                             
-                                            Text("Sign in with Phone Number")
+                                            Text(localizationManager.localizedString(for: "signin_with_phone"))
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(.white)
                                             
@@ -284,7 +285,7 @@ struct LoginView: View {
                                                      .foregroundColor(.black)
                                              }
                                             
-                                            Text("Sign in with Email")
+                                            Text(localizationManager.localizedString(for: "signin_with_email"))
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(.white)
                                             
@@ -329,7 +330,7 @@ struct LoginView: View {
                 
                 // Terms and Privacy - Enhanced with animations
                 VStack(spacing: 8) {
-                    Text("By continuing, you agree to")
+                    Text(localizationManager.localizedString(for: "by_continuing_agree"))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -340,14 +341,14 @@ struct LoginView: View {
                                 showPrivacyPolicy = true
                             }
                         }) {
-                            Text("Privacy Policy")
+                            Text(localizationManager.localizedString(for: "privacy_policy"))
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(.white)
                                 .underline()
                         }
                         .buttonStyle(ScaleButtonStyle())
                         
-                        Text("and")
+                        Text(localizationManager.localizedString(for: "and"))
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.gray)
                         
@@ -356,7 +357,7 @@ struct LoginView: View {
                                 showTermsConditions = true
                             }
                         }) {
-                            Text("Terms & Conditions")
+                            Text(localizationManager.localizedString(for: "terms_conditions"))
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(.white)
                                 .underline()

@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppState {
     case splash
+    case languageDetection
     case login
     case emailAuth
     case onboarding
@@ -56,6 +57,10 @@ class AppCoordinator: ObservableObject {
         }
     }
     
+    func startLanguageDetection() {
+        currentState = .languageDetection
+    }
+    
     func startLogin() {
         currentState = .login
     }
@@ -69,6 +74,8 @@ class AppCoordinator: ObservableObject {
     }
     
     func logout() {
+        // Clear language preference so user gets language detection on next login
+        UserDefaults.standard.removeObject(forKey: "user_preferred_language")
         onboardingCoordinator.reset()
         currentState = .splash
     }
@@ -89,8 +96,17 @@ struct AppCoordinatorView: View {
             case .splash:
                 SplashView()
                     .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SplashCompleted"))) { _ in
+                        // Check if user has language preference stored
+                        if UserDefaults.standard.string(forKey: "user_preferred_language") != nil {
                         appCoordinator.startLogin()
+                        } else {
+                            appCoordinator.startLanguageDetection()
+                        }
                     }
+                
+            case .languageDetection:
+                LanguageDetectionView()
+                    .environmentObject(appCoordinator)
                 
             case .login:
                 LoginView()

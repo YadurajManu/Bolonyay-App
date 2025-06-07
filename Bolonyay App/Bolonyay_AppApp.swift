@@ -10,6 +10,7 @@ import FirebaseCore
 
 @main
 struct BoloNyayApp: App {
+    @StateObject private var localizationManager = LocalizationManager()
     
     init() {
         // Configure Firebase
@@ -19,6 +20,7 @@ struct BoloNyayApp: App {
     var body: some Scene {
         WindowGroup {
             AppCoordinatorView()
+                .environmentObject(localizationManager)
         }
     }
 }

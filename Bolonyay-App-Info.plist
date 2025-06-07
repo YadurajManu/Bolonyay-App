@@ -15,5 +15,9 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BoloNyay needs access to your microphone to detect your language and enable voice-based legal form filling.</string>
+	<key>NSAudioSessionUsageDescription</key>
+	<string>BoloNyay uses audio recording to detect your preferred language for multilingual support.</string>
 </dict>
 </plist>

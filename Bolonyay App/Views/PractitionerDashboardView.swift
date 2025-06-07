@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PractitionerDashboardView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     @StateObject private var authManager = AuthenticationManager()
     @State private var selectedTab: DashboardTab = .home
     @State private var animateContent = false
@@ -30,7 +31,7 @@ struct PractitionerDashboardView: View {
             )
             .tabItem {
                 Image(systemName: DashboardTab.home.icon)
-                Text(DashboardTab.home.rawValue)
+                Text(localizationManager.text("home"))
             }
             .tag(DashboardTab.home)
             
@@ -38,7 +39,7 @@ struct PractitionerDashboardView: View {
             NewCaseTabView(isAnimated: animateContent)
                 .tabItem {
                     Image(systemName: DashboardTab.newCase.icon)
-                    Text(DashboardTab.newCase.rawValue)
+                    Text(localizationManager.text("new_case"))
                 }
                 .tag(DashboardTab.newCase)
             
@@ -46,7 +47,7 @@ struct PractitionerDashboardView: View {
             DocumentsTabView(isAnimated: animateContent)
                 .tabItem {
                     Image(systemName: DashboardTab.documents.icon)
-                    Text(DashboardTab.documents.rawValue)
+                    Text(localizationManager.text("documents"))
                 }
                 .tag(DashboardTab.documents)
             
@@ -54,7 +55,7 @@ struct PractitionerDashboardView: View {
             ReportsTabView(isAnimated: animateContent)
                 .tabItem {
                     Image(systemName: DashboardTab.reports.icon)
-                    Text(DashboardTab.reports.rawValue)
+                    Text(localizationManager.text("reports"))
                 }
                 .tag(DashboardTab.reports)
             
@@ -62,7 +63,7 @@ struct PractitionerDashboardView: View {
             HelpTabView(isAnimated: animateContent)
                 .tabItem {
                     Image(systemName: DashboardTab.help.icon)
-                    Text(DashboardTab.help.rawValue)
+                    Text(localizationManager.text("help"))
                 }
                 .tag(DashboardTab.help)
         }
@@ -219,6 +220,7 @@ struct HomeTabView: View {
 // MARK: - New Case Tab View
 struct NewCaseTabView: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         ZStack {
@@ -227,7 +229,7 @@ struct NewCaseTabView: View {
             VStack(spacing: 0) {
                 // Custom header
                 HStack {
-                    Text("New Case")
+                    Text(localizationManager.text("new_case"))
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()
@@ -248,6 +250,7 @@ struct NewCaseTabView: View {
 // MARK: - Documents Tab View
 struct DocumentsTabView: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         ZStack {
@@ -256,7 +259,7 @@ struct DocumentsTabView: View {
             VStack(spacing: 0) {
                 // Custom header
                 HStack {
-                    Text("Documents")
+                    Text(localizationManager.text("documents"))
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()
@@ -277,6 +280,7 @@ struct DocumentsTabView: View {
 // MARK: - Reports Tab View
 struct ReportsTabView: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         ZStack {
@@ -285,7 +289,7 @@ struct ReportsTabView: View {
             VStack(spacing: 0) {
                 // Custom header
                 HStack {
-                    Text("Reports")
+                    Text(localizationManager.text("reports"))
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()
@@ -306,6 +310,7 @@ struct ReportsTabView: View {
 // MARK: - Help Tab View
 struct HelpTabView: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         ZStack {
@@ -314,7 +319,7 @@ struct HelpTabView: View {
             VStack(spacing: 0) {
                 // Custom header
                 HStack {
-                    Text("Help")
+                    Text(localizationManager.text("help"))
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()

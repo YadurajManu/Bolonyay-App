@@ -57,7 +57,7 @@ struct SplashView: View {
                     )
                     .animation(
                         .timingCurve(0.09, 0.57, 0.49, 0.9, duration: Double.random(in: 3...5))
-                        .repeatForever(autoreverses: true)
+                        .repeatForever(autoreverses: true) 
                         .delay(Double.random(in: 0...2)),
                         value: viewModel.particleOpacity
                     )
@@ -210,9 +210,6 @@ struct SplashView: View {
         }
         .onAppear {
             viewModel.startAnimation()
-        }
-        .fullScreenCover(isPresented: $viewModel.showMainContent) {
-            LoginView()
         }
     }
 }

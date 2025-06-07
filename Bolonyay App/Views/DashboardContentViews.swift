@@ -45,6 +45,30 @@ enum CaseStatus: String, CaseIterable {
         case .eFiledCases: return "Successfully filed cases"
         }
     }
+    
+    var titleKey: String {
+        switch self {
+        case .drafts: return "drafts"
+        case .pendingAcceptance: return "pending_acceptance"
+        case .notAccepted: return "not_accepted"
+        case .deficitCourtFees: return "deficit_court_fees"
+        case .pendingScrutiny: return "pending_scrutiny"
+        case .defectiveCases: return "defective_cases"
+        case .eFiledCases: return "e_filed_cases"
+        }
+    }
+    
+    var descriptionKey: String {
+        switch self {
+        case .drafts: return "saved_drafts"
+        case .pendingAcceptance: return "cases_pending_acceptance"
+        case .notAccepted: return "cases_failed_checking"
+        case .deficitCourtFees: return "insufficient_court_fees"
+        case .pendingScrutiny: return "cases_pending_scrutiny"
+        case .defectiveCases: return "defective_after_checking"
+        case .eFiledCases: return "successfully_filed"
+        }
+    }
 }
 
 enum MyCasesTab: String, CaseIterable {
@@ -68,6 +92,7 @@ enum MyCasesTab: String, CaseIterable {
 // MARK: - Dashboard Home Content
 struct DashboardHomeContent: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     @State private var selectedMyCasesTab: MyCasesTab = .eFiledCases
     
     var body: some View {
@@ -75,8 +100,8 @@ struct DashboardHomeContent: View {
             // E-Filing Status Section
             VStack(spacing: 20) {
                 SectionHeader(
-                    title: "E-Filing Status",
-                    subtitle: "Track your case filing progress",
+                    title: localizationManager.text("e_filing_status"),
+                    subtitle: localizationManager.text("track_progress"),
                     animationDelay: 0.5,
                     isAnimated: isAnimated
                 )
@@ -100,8 +125,8 @@ struct DashboardHomeContent: View {
             // My Cases Section
             VStack(spacing: 20) {
                 SectionHeader(
-                    title: "My Cases",
-                    subtitle: "Manage your filed cases and documents",
+                    title: localizationManager.text("my_cases"),
+                    subtitle: localizationManager.text("manage_cases"),
                     animationDelay: 1.4,
                     isAnimated: isAnimated
                 )
@@ -171,6 +196,7 @@ struct StatusCard: View {
     let count: Int
     let animationDelay: Double
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         VStack(spacing: 8) {
@@ -194,14 +220,14 @@ struct StatusCard: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                 
-                Text(status.rawValue)
+                Text(localizationManager.text(status.titleKey))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                 
-                Text(status.description)
+                Text(localizationManager.text(status.descriptionKey))
                     .font(.system(size: 8, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
