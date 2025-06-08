@@ -15,6 +15,13 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>googlegmail</string>
+		<string>ymail</string>
+		<string>ms-outlook</string>
+		<string>mailto</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>BoloNyay needs access to your microphone to detect your language and enable voice-based legal form filling.</string>
 	<key>NSAudioSessionUsageDescription</key>

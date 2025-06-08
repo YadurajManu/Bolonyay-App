@@ -508,6 +508,229 @@ class AzureOpenAIManager {
         }
     }
     
+    // MARK: - PDF Content Processing
+    
+    func extractDetailedCaseInformation(caseRecord: FirebaseManager.CaseRecord) async throws -> DetailedCaseInfo {
+        let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        
+        let prompt = """
+        You are an expert legal data extraction AI for Indian legal documents. Extract specific information from the case conversation to fill legal document fields.
+        
+        CASE INFORMATION:
+        Case Type: \(caseRecord.caseType)
+        Case Details: \(caseRecord.caseDetails)
+        Conversation Summary: \(caseRecord.conversationSummary)
+        
+        QUESTIONS & RESPONSES:
+        \(zip(caseRecord.filingQuestions, caseRecord.userResponses).map { "Q: \($0.0)\nA: \($0.1)" }.joined(separator: "\n\n"))
+        
+        EXTRACT the following information in EXACT JSON format. If information is not available, use appropriate placeholder text:
+        
+        {
+          "petitioner": {
+            "name": "Extract actual name or use 'Name to be filled'",
+            "age": "Extract age or use 'Age to be filled'", 
+            "occupation": "Extract occupation or use 'Occupation to be filled'",
+            "address": "Extract full address or use 'Address to be filled'",
+            "phone": "Extract phone number or use 'Phone to be filled'"
+          },
+          "respondent": {
+            "name": "Extract respondent/accused name or use 'Respondent name to be filled'",
+            "age": "Extract age or use 'Age to be filled'",
+            "occupation": "Extract occupation or use 'Occupation to be filled'", 
+            "address": "Extract address or use 'Address to be filled'",
+            "relationship": "Extract relationship to petitioner or use 'Relationship to be filled'"
+          },
+          "incident": {
+            "date": "Extract exact date or use 'Date to be filled'",
+            "time": "Extract time or use 'Time to be filled'",
+            "place": "Extract specific location or use 'Place to be filled'",
+            "description": "Extract detailed incident description"
+          },
+          "amounts": {
+            "damages": "Extract monetary amounts claimed or use '0'",
+            "expenses": "Extract expenses incurred or use '0'"
+          },
+          "witnesses": ["Extract witness names or use empty array"],
+          "urgentFactors": ["Extract urgency reasons or use standard reasons"]
+        }
+        
+        IMPORTANT: 
+        - Extract real information from conversation when available
+        - Use professional placeholder text when information is missing
+        - Ensure JSON is valid and properly formatted
+        - Don't include explanations, only the JSON response
+        """
+        
+        let requestBody: [String: Any] = [
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "You are a legal data extraction expert. Extract case information and respond with only valid JSON."
+                ],
+                [
+                    "role": "user", 
+                    "content": prompt
+                ]
+            ],
+            "max_tokens": 800,
+            "temperature": 0.1
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("📊 Extracting detailed case information from Azure OpenAI...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let firstChoice = choices.first,
+              let message = firstChoice["message"] as? [String: Any],
+              let content = message["content"] as? String else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        // Parse the JSON response
+        guard let jsonData = content.data(using: .utf8),
+              let extractedInfo = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        print("✅ Case information extraction completed")
+        return DetailedCaseInfo(from: extractedInfo)
+    }
+    
+    func processContentForLegalPDF(caseRecord: FirebaseManager.CaseRecord) async throws -> String {
+        let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        
+        let prompt = """
+        You are an expert legal document drafting specialist for Indian courts with 25+ years of experience. Your task is to transform a voice-recorded case consultation into a structured, professional legal document content suitable for court filing.
+        
+        CASE INFORMATION:
+        Case Number: \(caseRecord.caseNumber)
+        Case Type: \(caseRecord.caseType)
+        Case Details: \(caseRecord.caseDetails)
+        Conversation Summary: \(caseRecord.conversationSummary)
+        
+        FILING QUESTIONS & RESPONSES:
+        \(zip(caseRecord.filingQuestions, caseRecord.userResponses).map { "Q: \($0.0)\nA: \($0.1)" }.joined(separator: "\n\n"))
+        
+        YOUR EXPERTISE: Transform this information into professional legal document content following Indian legal standards and court requirements.
+        
+        TASK: Create structured content for a formal legal document that covers:
+        
+        1. **LEGAL ANALYSIS**: Identify the core legal issues, applicable laws, and jurisdiction requirements
+        2. **FACTUAL FOUNDATION**: Organize facts chronologically with legal significance
+        3. **CAUSE OF ACTION**: Establish legal grounds and standing
+        4. **RELIEF FRAMEWORK**: Define specific legal remedies sought
+        5. **PROCEDURAL COMPLIANCE**: Ensure all mandatory elements are included
+        
+        RESPONSE FORMAT (use exact headers):
+        
+        CASE SUMMARY:
+        [Write a comprehensive legal summary in formal court language, incorporating relevant Indian legal provisions like IPC sections, CPC, CrPC, specific acts. Convert casual conversation into legal terminology while preserving factual accuracy.]
+        
+        KEY FACTS:
+        - [Fact 1: Chronological fact with legal relevance]
+        - [Fact 2: Evidence-based factual assertion]
+        - [Fact 3: Timeline with specific dates/amounts]
+        - [Continue with all relevant facts]
+        
+        LEGAL ISSUES:
+        - [Issue 1: Primary legal violation/right infringement]
+        - [Issue 2: Secondary legal considerations]
+        - [Issue 3: Procedural or jurisdictional matters]
+        - [Continue with all applicable legal issues]
+        
+        RELIEF SOUGHT:
+        - [Relief 1: Primary remedy with legal basis]
+        - [Relief 2: Monetary compensation/damages]
+        - [Relief 3: Injunctive or declaratory relief]
+        - [Relief 4: Costs and other legal remedies]
+        
+        NEXT STEPS:
+        - [Step 1: Immediate legal action required]
+        - [Step 2: Evidence collection requirements]
+        - [Step 3: Procedural compliance measures]
+        - [Step 4: Timeline and limitation considerations]
+        
+        PROFESSIONAL STANDARDS:
+        - Use formal legal language appropriate for Indian courts
+        - Reference specific legal provisions where applicable
+        - Ensure factual accuracy while enhancing legal presentation
+        - Include all elements necessary for a complete case filing
+        - Organize content logically for legal document structure
+        - Convert voice conversation content into court-appropriate language
+        - Maintain professional tone throughout
+        
+        Convert the informal conversation into formal legal language while preserving all factual content and ensuring completeness for court submission.
+        """
+        
+        let requestBody: [String: Any] = [
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "You are a legal document drafting expert for Indian courts. You transform case conversations into formal legal document content."
+                ],
+                [
+                    "role": "user", 
+                    "content": prompt
+                ]
+            ],
+            "max_tokens": 1500,
+            "temperature": 0.2
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("📄 Sending PDF content processing request to Azure OpenAI...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        print("📡 Azure OpenAI PDF Processing Response Code: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("❌ Azure OpenAI PDF Processing Error: \(httpResponse.statusCode) - \(errorMessage)")
+            throw AzureOpenAIError.apiError(httpResponse.statusCode, errorMessage)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        // Parse the response to extract the processed content
+        if let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            
+            print("✅ PDF content processing completed by Azure OpenAI")
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        throw AzureOpenAIError.invalidResponse
+    }
+    
     private func cleanFormattingSymbols(_ text: String) -> String {
         var cleanedText = text
         
@@ -1207,5 +1430,87 @@ enum BhashiniError: Error {
         case .languageDetectionFailed:
             return "Could not detect language from speech"
         }
+    }
+}
+
+// MARK: - Detailed Case Information Models
+
+struct DetailedCaseInfo {
+    let petitioner: PartyInfo
+    let respondent: PartyInfo
+    let incident: IncidentInfo
+    let amounts: AmountInfo
+    let witnesses: [String]
+    let urgentFactors: [String]
+    
+    init(from json: [String: Any]) {
+        if let petitionerData = json["petitioner"] as? [String: Any] {
+            self.petitioner = PartyInfo(from: petitionerData)
+        } else {
+            self.petitioner = PartyInfo()
+        }
+        
+        if let respondentData = json["respondent"] as? [String: Any] {
+            self.respondent = PartyInfo(from: respondentData)
+        } else {
+            self.respondent = PartyInfo()
+        }
+        
+        if let incidentData = json["incident"] as? [String: Any] {
+            self.incident = IncidentInfo(from: incidentData)
+        } else {
+            self.incident = IncidentInfo()
+        }
+        
+        if let amountsData = json["amounts"] as? [String: Any] {
+            self.amounts = AmountInfo(from: amountsData)
+        } else {
+            self.amounts = AmountInfo()
+        }
+        
+        self.witnesses = json["witnesses"] as? [String] ?? []
+        self.urgentFactors = json["urgentFactors"] as? [String] ?? []
+    }
+}
+
+struct PartyInfo {
+    let name: String
+    let age: String
+    let occupation: String
+    let address: String
+    let phone: String
+    let relationship: String
+    
+    init(from json: [String: Any] = [:]) {
+        self.name = json["name"] as? String ?? "Name to be filled"
+        self.age = json["age"] as? String ?? "Age to be filled"
+        self.occupation = json["occupation"] as? String ?? "Occupation to be filled"
+        self.address = json["address"] as? String ?? "Address to be filled"
+        self.phone = json["phone"] as? String ?? "Phone to be filled"
+        self.relationship = json["relationship"] as? String ?? "Relationship to be filled"
+    }
+}
+
+struct IncidentInfo {
+    let date: String
+    let time: String
+    let place: String
+    let description: String
+    
+    init(from json: [String: Any] = [:]) {
+        self.date = json["date"] as? String ?? "Date to be filled"
+        self.time = json["time"] as? String ?? "Time to be filled"
+        self.place = json["place"] as? String ?? "Place to be filled"
+        self.description = json["description"] as? String ?? "Detailed incident description to be filled"
+    }
+}
+
+struct AmountInfo {
+    let damages: String
+    let expenses: String
+    
+    init(from json: [String: Any] = [:]) {
+        self.damages = json["damages"] as? String ?? "0"
+        self.expenses = json["expenses"] as? String ?? "0"
     }
 } 

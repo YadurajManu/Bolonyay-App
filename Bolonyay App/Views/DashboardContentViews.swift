@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MessageUI
 
 // MARK: - Case Status Types
 enum CaseStatus: String, CaseIterable {
@@ -293,10 +294,13 @@ struct MyCasesContent: View {
     let animationDelay: Double
     let isAnimated: Bool
     @StateObject private var firebaseManager = FirebaseManager.shared
+    @StateObject private var pdfManager = PDFGenerationManager.shared
     @EnvironmentObject var localizationManager: LocalizationManager
     @State private var cases: [FirebaseManager.CaseRecord] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var generatedPDFURL: URL?
+    @State private var showPDFPreview = false
     
     var body: some View {
         VStack(spacing: 16) {
@@ -338,6 +342,7 @@ struct MyCasesContent: View {
             Task {
                 await loadCases()
             }
+            setupPDFGenerationObserver()
         }
         .refreshable {
             await loadCases()
@@ -348,6 +353,11 @@ struct MyCasesContent: View {
             }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(isPresented: $showPDFPreview) {
+            if let pdfURL = generatedPDFURL {
+                PDFPreviewView(pdfURL: pdfURL)
+            }
         }
     }
     
@@ -404,6 +414,42 @@ struct MyCasesContent: View {
             print("✅ Auto-created user for cases: \(user.name)")
         } catch {
             print("❌ Failed to create user for cases: \(error)")
+        }
+    }
+    
+    private func setupPDFGenerationObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GeneratePDFForCase"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let caseRecord = notification.object as? FirebaseManager.CaseRecord {
+                generatePDF(for: caseRecord)
+            }
+        }
+    }
+    
+    private func generatePDF(for caseRecord: FirebaseManager.CaseRecord) {
+        Task {
+            do {
+                guard let user = firebaseManager.getCurrentUser() else {
+                    print("❌ No user found for PDF generation")
+                    return
+                }
+                
+                let pdfURL = try await pdfManager.generateLegalCasePDF(for: caseRecord, user: user)
+                
+                DispatchQueue.main.async {
+                    self.generatedPDFURL = pdfURL
+                    self.showPDFPreview = true
+                }
+                
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "PDF generation failed: \(error.localizedDescription)"
+                }
+                print("❌ PDF generation failed: \(error)")
+            }
         }
     }
 }
@@ -490,6 +536,30 @@ struct CompactCaseCard: View {
                 }
                 
                 Spacer()
+                
+                // PDF Generation Button
+                Button(action: {
+                    // This will be handled by the parent view
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("GeneratePDFForCase"),
+                        object: caseRecord
+                    )
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 10))
+                        Text("PDF")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.blue.opacity(0.1))
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
                 
                 Text(caseRecord.language.uppercased())
                     .font(.system(size: 9, weight: .semibold))
@@ -1068,27 +1138,46 @@ class VoiceCaseFilingManager: ObservableObject {
     }
     
     private func ensureUserExists() async {
-        // Check if user already exists
+        // Check if FirebaseManager user already exists
         if firebaseManager.getCurrentUser() != nil {
             return // User already exists
         }
         
-        // Create a user for case filing
-        do {
-            let deviceName = UIDevice.current.name
-            let userName = deviceName.isEmpty ? "BoloNyay User" : deviceName
+        // Try to get user from AuthenticationManager first
+        let authManager = await AuthenticationManager()
+        
+        if let authUser = await authManager.currentUser,
+           let userProfile = await authManager.userProfile {
             
+            // Create FirebaseManager user from authenticated user
+            do {
+                let user = try await firebaseManager.createUser(
+                    email: userProfile.email.isEmpty ? nil : userProfile.email,
+                    name: userProfile.fullName.isEmpty ? "BoloNyay User" : userProfile.fullName,
+                    userType: userProfile.userType == .advocate ? .advocate : .petitioner,
+                    language: localizationManager.currentLanguage
+                )
+                print("✅ Created FirebaseManager user from authenticated profile: \(user.name)")
+                return
+            } catch {
+                print("❌ Failed to create user from auth profile: \(error)")
+            }
+        }
+        
+        // Fallback: Create basic user (this should trigger proper sign-up flow)
+        do {
+            let userName = "BoloNyay User" // Don't use device name
             let user = try await firebaseManager.createUser(
                 email: nil,
                 name: userName,
                 userType: .petitioner,
                 language: localizationManager.currentLanguage
             )
-            print("✅ Auto-created user for case filing: \(user.name)")
+            print("⚠️ Created fallback user - User should complete proper registration: \(user.name)")
         } catch {
-            print("❌ Failed to create user: \(error)")
+            print("❌ Failed to create fallback user: \(error)")
             DispatchQueue.main.async {
-                self.errorMessage = "Failed to create user account: \(error.localizedDescription)"
+                self.errorMessage = "Please complete user registration to continue"
                 self.caseFilingState = .error
             }
         }
@@ -2098,11 +2187,23 @@ struct QuestionCard: View {
                                 withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
                                     isExpanded = true
                                     textAnswer = answer
+                                    voiceAnswerError = nil
                                 }
                             }) {
-                                Text("Edit")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.blue)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 10, weight: .medium))
+                                    Text("Edit")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.blue.opacity(0.1))
+                                        .stroke(Color.blue.opacity(0.3), lineWidth: 0.5)
+                                )
                             }
                         }
                         
@@ -2229,6 +2330,12 @@ struct QuestionCard: View {
         .onAppear {
             textAnswer = answer
         }
+        .onChange(of: answer) { newAnswer in
+            // Keep textAnswer in sync with the updated answer from parent
+            if !isExpanded {
+                textAnswer = newAnswer
+            }
+        }
         .onDisappear {
             cleanupRecording()
         }
@@ -2313,6 +2420,11 @@ struct QuestionCard: View {
                 isExpanded = false
             }
             cleanupRecording()
+            
+            // Force UI refresh by clearing and setting textAnswer
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.textAnswer = finalAnswer
+            }
         }
     }
     
@@ -2432,6 +2544,9 @@ struct ReadyToFileView: View {
 
 struct CaseFiledView: View {
     @ObservedObject var manager: VoiceCaseFilingManager
+    @StateObject private var pdfManager = PDFGenerationManager.shared
+    @State private var showPDFPreview = false
+    @State private var generatedPDFURL: URL?
     
     var body: some View {
         VStack(spacing: 24) {
@@ -2455,6 +2570,151 @@ struct CaseFiledView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
+            }
+            
+            // PDF Generation Section
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Legal Document PDF")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Text("Generate official court filing document")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.black.opacity(0.3))
+                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                )
+                
+                // PDF Generation Button
+                if pdfManager.isGeneratingPDF {
+                    VStack(spacing: 12) {
+                        ProgressView(value: pdfManager.pdfGenerationProgress)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .frame(height: 8)
+                        
+                        Text("Generating PDF... \(Int(pdfManager.pdfGenerationProgress * 100))%")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.horizontal, 20)
+                } else if let pdfURL = generatedPDFURL {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("PDF Generated Successfully!")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.green)
+                        }
+                        
+                        // PDF Action Buttons - Two rows for better layout
+                        VStack(spacing: 12) {
+                            // First row - Preview and Email
+                            HStack(spacing: 16) {
+                                Button(action: {
+                                    showPDFPreview = true
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "eye.fill")
+                                        Text("Preview")
+                                    }
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 25)
+                                            .fill(Color.blue)
+                                    )
+                                }
+                                
+                                Button(action: {
+                                    emailPDF(pdfURL)
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "envelope.fill")
+                                        Text("Email")
+                                    }
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 25)
+                                            .fill(Color.green)
+                                    )
+                                }
+                            }
+                            
+                            // Second row - Share button (full width)
+                            Button(action: {
+                                sharePDF(pdfURL)
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text("Share with Other Apps")
+                                }
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.blue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 25)
+                                        .stroke(Color.blue, lineWidth: 2)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Button(action: {
+                        generatePDF()
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "doc.badge.plus")
+                                .font(.system(size: 18, weight: .semibold))
+                            
+                            Text("Generate Court Filing PDF")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.blue, Color.blue.opacity(0.8)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                        )
+                    }
+                }
+                
+                // Error Message
+                if let errorMessage = pdfManager.errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 14))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                }
             }
             
             VStack(spacing: 16) {
@@ -2495,6 +2755,11 @@ struct CaseFiledView: View {
                 .fill(Color.white.opacity(0.03))
                 .stroke(Color.green.opacity(0.2), lineWidth: 1)
         )
+        .sheet(isPresented: $showPDFPreview) {
+            if let pdfURL = generatedPDFURL {
+                PDFPreviewView(pdfURL: pdfURL)
+            }
+        }
     }
     
     private func generateDisplayCaseNumber() -> String {
@@ -2504,6 +2769,404 @@ struct CaseFiledView: View {
             return "BN\(currentYear)\(randomNumber)"
         }
         return "BN2024000000"
+    }
+    
+    // MARK: - PDF Functions
+    
+    private func generatePDF() {
+        Task {
+            do {
+                // Get current user and create a dummy case record for demo
+                guard let user = FirebaseManager.shared.getCurrentUser() else {
+                    print("❌ No user found for PDF generation")
+                    return
+                }
+                
+                // Create case record from manager data
+                let caseRecord = FirebaseManager.CaseRecord(
+                    id: UUID().uuidString,
+                    caseNumber: "BN2024\(Int.random(in: 100000...999999))",
+                    userId: user.id,
+                    caseType: manager.caseType,
+                    caseDetails: manager.caseDetails,
+                    conversationSummary: buildConversationSummary(),
+                    filingQuestions: manager.filingQuestions,
+                    userResponses: manager.userResponses,
+                    status: .filed,
+                    createdAt: Date(),
+                    updatedAt: Date(),
+                    sessionId: manager.sessionId,
+                    azureSessionId: manager.sessionId,
+                    language: LocalizationManager.shared.currentLanguage
+                )
+                
+                let pdfURL = try await pdfManager.generateLegalCasePDF(for: caseRecord, user: user)
+                
+                DispatchQueue.main.async {
+                    self.generatedPDFURL = pdfURL
+                }
+                
+            } catch {
+                print("❌ PDF generation failed: \(error)")
+            }
+        }
+    }
+    
+    private func buildConversationSummary() -> String {
+        var summary = "Case Filing Conversation Summary:\n\n"
+        
+        for message in manager.conversationHistory {
+            switch message.type {
+            case .userTranscription:
+                summary += "User: \(message.content)\n\n"
+            case .aiResponse:
+                summary += "Legal Expert: \(message.content)\n\n"
+            }
+        }
+        
+        return summary
+    }
+    
+    private func sharePDF(_ pdfURL: URL) {
+        let activityViewController = UIActivityViewController(activityItems: [pdfURL], applicationActivities: nil)
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            window.rootViewController?.present(activityViewController, animated: true)
+        }
+    }
+    
+    private func emailPDF(_ pdfURL: URL) {
+        EmailManager.shared.sendLegalDocument(pdfURL: pdfURL) { success, message in
+            DispatchQueue.main.async {
+                if !success && !message.contains("cancelled") {
+                    // Show error alert only if not cancelled
+                    let alert = UIAlertController(
+                        title: "Email Error",
+                        message: message,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first {
+                        window.rootViewController?.present(alert, animated: true)
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+// MARK: - Mail Coordinator for CaseFiledView
+class MailCoordinator: NSObject, MFMailComposeViewControllerDelegate {
+    static let shared = MailCoordinator() // Singleton to prevent deallocation
+    
+    private override init() {
+        super.init()
+    }
+    
+    func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+        controller.dismiss(animated: true)
+        
+        // Handle result
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            var message = ""
+            var isSuccess = false
+            
+            switch result {
+            case .sent:
+                message = "✅ Email sent successfully!"
+                isSuccess = true
+            case .saved:
+                message = "📄 Email saved as draft"
+                isSuccess = true
+            case .cancelled:
+                message = "❌ Email cancelled"
+            case .failed:
+                message = "❌ Failed to send email"
+            @unknown default:
+                message = "❌ Unknown error occurred"
+            }
+            
+            // Show result alert
+            let alert = UIAlertController(
+                title: isSuccess ? "Success" : "Email Status",
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
+                window.rootViewController?.present(alert, animated: true)
+            }
+        }
+    }
+}
+
+// MARK: - Enhanced Email Manager
+class EmailManager {
+    static let shared = EmailManager()
+    
+    private init() {}
+    
+    func sendLegalDocument(pdfURL: URL, completion: @escaping (Bool, String) -> Void) {
+        // Enhanced email options with better recipients
+        let emailOptions = [
+            ("👨‍💼 Legal Advisor", "legal.advisor@example.com"),
+            ("🏛️ Court Registry", "registry@district.court.gov.in"),
+            ("👨‍⚖️ Public Prosecutor", "prosecutor@district.court.gov.in"),
+            ("👥 Family Member", "family@example.com"),
+            ("📧 Gmail Direct", "gmail"),
+            ("✉️ Custom Email", "custom")
+        ]
+        
+        let alert = UIAlertController(
+            title: "📧 Send Legal Document",
+            message: "Choose how you'd like to send your legal document",
+            preferredStyle: .actionSheet
+        )
+        
+        // Add predefined options
+        for (title, email) in emailOptions {
+            if email == "custom" {
+                alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                    self.showCustomEmailInput(pdfURL: pdfURL, completion: completion)
+                })
+            } else if email == "gmail" {
+                alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                    self.sendViaGmailDirect(pdfURL: pdfURL, completion: completion)
+                })
+            } else {
+                alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                    self.composeAdvancedEmail(to: email, pdfURL: pdfURL, completion: completion)
+                })
+            }
+        }
+        
+        alert.addAction(UIAlertAction(title: "❌ Cancel", style: .cancel) { _ in
+            completion(false, "Email cancelled")
+        })
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            
+            // For iPad
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = window
+                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            
+            window.rootViewController?.present(alert, animated: true)
+        }
+    }
+    
+    private func showCustomEmailInput(pdfURL: URL, completion: @escaping (Bool, String) -> Void) {
+        let alert = UIAlertController(
+            title: "📮 Enter Email Address",
+            message: "Please enter the recipient's email address for sending your legal document",
+            preferredStyle: .alert
+        )
+        
+        alert.addTextField { textField in
+            textField.placeholder = "example@domain.com"
+            textField.keyboardType = .emailAddress
+            textField.autocapitalizationType = .none
+            textField.autocorrectionType = .no
+            textField.clearButtonMode = .whileEditing
+        }
+        
+        alert.addAction(UIAlertAction(title: "📧 Send Email", style: .default) { _ in
+            if let email = alert.textFields?.first?.text, !email.isEmpty {
+                if self.isValidEmail(email) {
+                    self.composeAdvancedEmail(to: email, pdfURL: pdfURL, completion: completion)
+                } else {
+                    completion(false, "Invalid email address format")
+                }
+            } else {
+                completion(false, "Email address is required")
+            }
+        })
+        
+        alert.addAction(UIAlertAction(title: "❌ Cancel", style: .cancel) { _ in
+            completion(false, "Email cancelled")
+        })
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            window.rootViewController?.present(alert, animated: true)
+        }
+    }
+    
+    private func composeAdvancedEmail(to email: String, pdfURL: URL, completion: @escaping (Bool, String) -> Void) {
+        // First try Gmail integration if Mail app is not available
+        guard MFMailComposeViewController.canSendMail() else {
+            // Use Gmail Manager for better email options
+            let emailTemplate = GmailManager.shared.createLegalDocumentEmail(
+                caseNumber: "BN\(Calendar.current.component(.year, from: Date()))\(Int.random(in: 100000...999999))",
+                documentType: "Legal Case Filing"
+            )
+            
+            GmailManager.shared.sendEmailViaGmail(
+                to: email,
+                subject: emailTemplate.subject,
+                body: emailTemplate.body,
+                attachmentURL: pdfURL,
+                completion: completion
+            )
+            return
+        }
+        
+        let mailComposer = MFMailComposeViewController()
+        mailComposer.mailComposeDelegate = MailCoordinator.shared
+        
+        // Set enhanced email details
+        mailComposer.setToRecipients([email])
+        mailComposer.setSubject("🏛️ Legal Document - BoloNyay Case Filing")
+        
+        // Enhanced email body with better formatting
+        let currentDate = DateFormatter.localizedString(from: Date(), dateStyle: .full, timeStyle: .short)
+        let caseNumber = "BN\(Calendar.current.component(.year, from: Date()))\(Int.random(in: 100000...999999))"
+        
+        let emailBody = """
+        📧 Legal Document from BoloNyay Legal Assistant
+        
+        Dear Recipient,
+        
+        I hope this email finds you well. Please find attached the legal document generated through BoloNyay Legal Assistant platform.
+        
+        📋 Document Details:
+        ───────────────────────
+        • Case Reference: \(caseNumber)
+        • Generated Date: \(currentDate)
+        • Document Type: Legal Case Filing
+        • Platform: BoloNyay Legal Assistant
+        • Format: PDF Document
+        
+        📝 Important Information:
+        ───────────────────────
+        This document contains important case filing information and legal details that should be reviewed carefully by qualified legal professionals.
+        
+        The document has been generated using AI-assisted legal guidance and should be verified for accuracy and completeness before any official submission.
+        
+        📞 Need Help?
+        ──────────────
+        If you have any questions about this document or need further assistance, please don't hesitate to contact our support team.
+        
+        • Email: support@bolonyay.com
+        • Website: www.bolonyay.com
+        • Legal Helpline: +91-XXXXX-XXXXX
+        
+        🔒 Confidentiality Notice:
+        ─────────────────────────
+        This email and its attachments contain confidential legal information. If you are not the intended recipient, please delete this email immediately and notify the sender.
+        
+        Best regards,
+        BoloNyay Legal Assistant Team
+        
+        ───────────────────────
+        🌟 Powered by BoloNyay
+        Making Legal Assistance Accessible to Everyone
+        """
+        
+        mailComposer.setMessageBody(emailBody, isHTML: false)
+        
+        // Enhanced PDF attachment with better filename
+        do {
+            let pdfData = try Data(contentsOf: pdfURL)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd_HHmm"
+            let dateString = formatter.string(from: Date())
+            let fileName = "BoloNyay_Legal_Document_\(dateString).pdf"
+            
+            mailComposer.addAttachmentData(pdfData, mimeType: "application/pdf", fileName: fileName)
+            
+            print("✅ PDF attached successfully: \(fileName)")
+        } catch {
+            print("❌ Failed to attach PDF: \(error)")
+            completion(false, "Failed to attach PDF document")
+            return
+        }
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            window.rootViewController?.present(mailComposer, animated: true)
+            completion(true, "Email composer opened successfully")
+        } else {
+            completion(false, "Unable to present email composer")
+        }
+    }
+    
+    private func sendViaGmailDirect(pdfURL: URL, completion: @escaping (Bool, String) -> Void) {
+        let emailTemplate = GmailManager.shared.createLegalDocumentEmail(
+            caseNumber: "BN\(Calendar.current.component(.year, from: Date()))\(Int.random(in: 100000...999999))",
+            documentType: "Legal Case Filing"
+        )
+        
+        let alert = UIAlertController(
+            title: "📧 Gmail Direct Send",
+            message: "Enter recipient's email address for Gmail",
+            preferredStyle: .alert
+        )
+        
+        alert.addTextField { textField in
+            textField.placeholder = "recipient@gmail.com"
+            textField.keyboardType = .emailAddress
+            textField.autocapitalizationType = .none
+            textField.autocorrectionType = .no
+        }
+        
+        alert.addAction(UIAlertAction(title: "📧 Send via Gmail", style: .default) { _ in
+            if let email = alert.textFields?.first?.text, !email.isEmpty {
+                GmailManager.shared.sendEmailViaGmail(
+                    to: email,
+                    subject: emailTemplate.subject,
+                    body: emailTemplate.body,
+                    attachmentURL: pdfURL,
+                    completion: completion
+                )
+            } else {
+                completion(false, "Email address is required")
+            }
+        })
+        
+        alert.addAction(UIAlertAction(title: "❌ Cancel", style: .cancel) { _ in
+            completion(false, "Gmail send cancelled")
+        })
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            window.rootViewController?.present(alert, animated: true)
+        }
+    }
+
+    private func fallbackToShareSheet(pdfURL: URL) {
+        let activityViewController = UIActivityViewController(activityItems: [pdfURL], applicationActivities: nil)
+        
+        // Customize share sheet
+        activityViewController.setValue("Share Legal Document", forKey: "subject")
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first {
+            
+            // For iPad
+            if let popover = activityViewController.popoverPresentationController {
+                popover.sourceView = window
+                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            
+            window.rootViewController?.present(activityViewController, animated: true)
+        }
+    }
+    
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPredicate = NSPredicate(format:"SELF MATCHES %@", emailRegex)
+        return emailPredicate.evaluate(with: email)
     }
 }
 
@@ -2557,142 +3220,9 @@ struct ReportsContent: View {
 struct HelpContent: View {
     let isAnimated: Bool
     @EnvironmentObject var localizationManager: LocalizationManager
-    @StateObject private var firebaseManager = FirebaseManager.shared
-    @StateObject private var authManager = AuthenticationManager()
-    @State private var showLanguagePicker = false
-    @State private var showUserProfile = false
-    @State private var showDeleteConfirmation = false
-    @State private var showLogoutConfirmation = false
-    @State private var isLoading = false
-    @State private var errorMessage: String?
     
     var body: some View {
-        VStack(spacing: 32) {
-            // User Profile Section
-            ElegantUserProfileCard(
-                user: firebaseManager.getCurrentUser(),
-                localizationManager: localizationManager,
-                animationDelay: 0.3,
-                isAnimated: isAnimated,
-                onProfileTap: { showUserProfile = true }
-            )
-            
-            // Language Settings
-            ElegantLanguageSettings(
-                currentLanguage: localizationManager.currentLanguage,
-                localizationManager: localizationManager,
-                animationDelay: 0.5,
-                isAnimated: isAnimated,
-                onLanguageChange: { showLanguagePicker = true }
-            )
-            
-            // Help Sections
-            VStack(spacing: 20) {
-                ElegantHelpSection(
-                    icon: "questionmark.circle.fill",
-                    title: localizationManager.text("faq"),
-                    subtitle: localizationManager.text("common_questions"),
-                    animationDelay: 0.7,
-                    isAnimated: isAnimated
-                ) {
-                    // FAQ Action
-                }
-                
-                ElegantHelpSection(
-                    icon: "book.fill",
-                    title: localizationManager.text("user_guide"),
-                    subtitle: localizationManager.text("learn_app"),
-                    animationDelay: 0.8,
-                    isAnimated: isAnimated
-                ) {
-                    // User Guide Action
-                }
-                
-                ElegantHelpSection(
-                    icon: "phone.fill",
-                    title: localizationManager.text("contact_support"),
-                    subtitle: localizationManager.text("get_help"),
-                    animationDelay: 0.9,
-                    isAnimated: isAnimated
-                ) {
-                    // Contact Support Action
-                }
-            }
-            
-            // Account Management
-            ElegantAccountManagement(
-                localizationManager: localizationManager,
-                animationDelay: 1.0,
-                isAnimated: isAnimated,
-                onDeleteAccount: { showDeleteConfirmation = true },
-                onLogout: { showLogoutConfirmation = true }
-            )
-            
-            Spacer(minLength: 100)
-        }
-        .sheet(isPresented: $showLanguagePicker) {
-            ElegantLanguagePicker(
-                localizationManager: localizationManager,
-                onLanguageSelected: { language in
-                    localizationManager.setLanguage(language)
-                    showLanguagePicker = false
-                }
-            )
-        }
-        .sheet(isPresented: $showUserProfile) {
-            ElegantUserProfileView(
-                user: firebaseManager.getCurrentUser(),
-                localizationManager: localizationManager
-            )
-        }
-        .alert(localizationManager.text("logout"), isPresented: $showLogoutConfirmation) {
-            Button(localizationManager.text("cancel"), role: .cancel) { }
-            Button(localizationManager.text("logout"), role: .destructive) {
-                logout()
-            }
-        } message: {
-            Text(localizationManager.text("logout_confirmation"))
-        }
-        .alert(localizationManager.text("delete_account"), isPresented: $showDeleteConfirmation) {
-            Button(localizationManager.text("cancel"), role: .cancel) { }
-            Button(localizationManager.text("delete"), role: .destructive) {
-                Task {
-                    await deleteAccount()
-                }
-            }
-        } message: {
-            Text(localizationManager.text("delete_account_warning"))
-        }
-        .alert(localizationManager.text("error"), isPresented: .constant(errorMessage != nil)) {
-            Button(localizationManager.text("ok")) {
-                errorMessage = nil
-            }
-        } message: {
-            Text(errorMessage ?? "")
-        }
-        .overlay {
-            if isLoading {
-                ElegantLoadingOverlay()
-            }
-        }
-    }
-    
-    private func logout() {
-        authManager.signOut()
-        // Reset any other app state as needed
-    }
-    
-    private func deleteAccount() async {
-        isLoading = true
-        
-        // Simulate account deletion process
-        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-        
-        DispatchQueue.main.async {
-            isLoading = false
-            // Add actual account deletion logic here
-            errorMessage = "Account deletion will be implemented soon"
-        }
+        HelpSystemView(animationDelay: 0.0)
     }
 }
 
@@ -2772,9 +3302,12 @@ struct ElegantUserProfileCard: View {
     let isAnimated: Bool
     let onProfileTap: () -> Void
     @State private var isVisible = false
+    @State private var showProfileManagement = false
     
     var body: some View {
-        Button(action: onProfileTap) {
+        Button(action: {
+            showProfileManagement = true
+        }) {
             HStack(spacing: 16) {
                 // Avatar
                 Circle()
@@ -2827,6 +3360,9 @@ struct ElegantUserProfileCard: View {
             withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
                 isVisible = true
             }
+        }
+        .sheet(isPresented: $showProfileManagement) {
+            UserProfileManagementView()
         }
     }
 }

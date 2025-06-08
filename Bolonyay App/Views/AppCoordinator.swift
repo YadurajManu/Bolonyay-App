@@ -106,7 +106,7 @@ struct AppCoordinatorView: View {
                                 // If auto-login didn't work, go to login screen
                                 if !authManager.isSignedIn {
                                     await MainActor.run {
-                                        appCoordinator.startLogin()
+                        appCoordinator.startLogin()
                                     }
                                 }
                             }

@@ -105,7 +105,7 @@ struct PractitionerDashboardView: View {
             if authManager.rememberMe {
                 Text("Choose logout option. 'Logout & Clear Saved Login' will remove your saved credentials.")
             } else {
-                Text("Are you sure you want to logout?")
+            Text("Are you sure you want to logout?")
             }
         }
         .onAppear {
