@@ -155,6 +155,55 @@ struct EmailAuthView: View {
                         }
                         .padding(.horizontal, 24)
                         
+                        // Remember Me Toggle (Sign In only)
+                        if !isSignUp {
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    withAnimation(.spring(duration: 0.3, bounce: 0.4)) {
+                                        authManager.toggleRememberMe()
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+                                                .frame(width: 18, height: 18)
+                                            
+                                            if authManager.rememberMe {
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 12, weight: .semibold))
+                                                    .foregroundColor(.green)
+                                                    .scaleEffect(authManager.rememberMe ? 1.0 : 0.0)
+                                                    .animation(.spring(duration: 0.3, bounce: 0.6), value: authManager.rememberMe)
+                                            }
+                                        }
+                                        
+                                        Text("Remember Me")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.white.opacity(0.8))
+                                    }
+                                }
+                                .buttonStyle(ScaleButtonStyle())
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    // TODO: Implement forgot password
+                                    print("Forgot password tapped")
+                                }) {
+                                    Text("Forgot Password?")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .underline()
+                                }
+                                .buttonStyle(ScaleButtonStyle())
+                            }
+                            .padding(.horizontal, 24)
+                            .scaleEffect(animateContent ? 1.0 : 0.95)
+                            .opacity(animateContent ? 1.0 : 0.0)
+                            .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.7), value: animateContent)
+                        }
+                        
                         // Error Message
                         if let errorMessage = authManager.errorMessage {
                             Text(errorMessage)
@@ -302,6 +351,7 @@ struct EmailAuthView: View {
             }
             .onAppear {
                 animateContent = true
+                loadSavedCredentials()
             }
         }
         .sheet(isPresented: $showPrivacyPolicy) {
@@ -341,6 +391,14 @@ struct EmailAuthView: View {
         password = ""
         confirmPassword = ""
         focusedField = nil
+    }
+    
+    private func loadSavedCredentials() {
+        if !isSignUp, let credentials = authManager.loadSavedCredentials() {
+            email = credentials.email ?? ""
+            password = credentials.password ?? ""
+            print("🔑 Loaded saved credentials for: \(email)")
+        }
     }
 }
 

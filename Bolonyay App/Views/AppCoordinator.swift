@@ -98,7 +98,18 @@ struct AppCoordinatorView: View {
                     .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SplashCompleted"))) { _ in
                         // Check if user has language preference stored
                         if UserDefaults.standard.string(forKey: "user_preferred_language") != nil {
-                        appCoordinator.startLogin()
+                            // Try auto-login if credentials are saved
+                            Task {
+                                let authManager = AuthenticationManager()
+                                await authManager.attemptAutoLogin()
+                                
+                                // If auto-login didn't work, go to login screen
+                                if !authManager.isSignedIn {
+                                    await MainActor.run {
+                                        appCoordinator.startLogin()
+                                    }
+                                }
+                            }
                         } else {
                             appCoordinator.startLanguageDetection()
                         }

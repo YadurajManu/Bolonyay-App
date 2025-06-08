@@ -356,41 +356,96 @@ class AzureOpenAIManager {
         request.setValue(apiKey, forHTTPHeaderField: "api-key")
         
         let prompt = """
-        You are a legal case filing expert for the Indian legal system. A user has had a conversation about their legal issue and now wants to formally file a case.
+        You are an expert legal case filing specialist for Indian courts with 20+ years experience. A user has shared their legal concern and wants to file a formal case.
         
         CONVERSATION SUMMARY:
         \(conversationSummary)
         
-        YOUR TASK: Analyze this conversation and prepare for formal case filing by:
+        YOUR EXPERTISE: Analyze this conversation with precision and create a comprehensive case filing questionnaire that covers all legal requirements for Indian courts.
         
-        1. IDENTIFYING THE CASE TYPE - Determine what type of legal case this is (Civil, Criminal, Family, Property, Consumer, Labor, etc.)
+        TASK BREAKDOWN:
         
-        2. EXTRACTING KEY DETAILS - Summarize the main legal issue in one clear sentence
+        1. CASE TYPE IDENTIFICATION - Determine the exact legal category:
+           • Civil Cases: Property disputes, contract breaches, defamation, money recovery, partnership disputes
+           • Criminal Cases: Cheating, fraud, harassment, domestic violence, theft, assault
+           • Family Cases: Divorce, maintenance, child custody, dowry harassment, domestic violence
+           • Consumer Cases: Product defects, service failures, unfair trade practices
+           • Labor Cases: Wrongful termination, salary disputes, workplace harassment
+           • Property Cases: Land disputes, illegal possession, boundary issues, property fraud
+           • Commercial Cases: Business disputes, trademark violations, competition issues
         
-        3. GENERATING ESSENTIAL QUESTIONS - Create 5-6 specific questions needed to file this type of case properly
+        2. LEGAL FOUNDATION - Summarize the core legal issue with relevant Indian laws
+        
+        3. COMPREHENSIVE QUESTIONNAIRE - Generate 8-12 specific questions covering:
+           • Personal Details & Standing
+           • Factual Timeline & Evidence
+           • Parties Involved & Relationships
+           • Financial Impact & Damages
+           • Legal Relief Sought
+           • Supporting Documents
+           • Urgency & Timeline
+           • Jurisdiction & Venue
+           • Previous Legal Actions
+           • Witness Information
         
         RESPONSE FORMAT (use exact headers):
         
-        CASE TYPE: [Specific type like "Property Dispute", "Domestic Violence", "Consumer Complaint", etc.]
+        CASE TYPE: [Specific category with subcategory, e.g., "Civil Case - Property Dispute", "Criminal Case - Cheating and Fraud"]
         
-        CASE DETAILS: [One clear sentence summarizing the main legal issue]
+        CASE DETAILS: [Detailed summary with relevant Indian legal provisions like IPC sections, Civil Procedure Code, specific acts]
         
         QUESTIONS:
-        - [Question 1 - must be specific and necessary for this case type]
-        - [Question 2 - focus on facts, dates, evidence needed]
-        - [Question 3 - about parties involved, relationships]
-        - [Question 4 - about damages, relief sought]
-        - [Question 5 - about supporting documents/evidence]
-        - [Question 6 - about urgency/timeline requirements]
+        - आपका पूरा नाम, पता और उम्र क्या है? (What is your full name, address and age?)
+        - घटना की सटीक तारीख और समय क्या था? (What was the exact date and time of the incident?)
+        - [Continue with case-specific questions...]
+        
+        QUESTION CATEGORIES TO INCLUDE:
+        
+        FOR ALL CASES:
+        • Personal identification and legal standing
+        • Complete incident timeline with dates
+        • All parties involved with full details
+        • Evidence and documents available
+        • Witnesses and their contact information
+        • Financial losses or damages
+        • Specific legal relief sought
+        • Urgency factors and limitation periods
+        
+        FOR PROPERTY CASES:
+        • Property details, survey numbers, documents
+        • Chain of title and registration details
+        • Possession history and current status
+        • Market value and financial impact
+        
+        FOR CRIMINAL CASES:
+        • FIR details if filed
+        • Police station and investigating officer
+        • Medical reports if applicable
+        • Threat assessment and safety concerns
+        
+        FOR FAMILY CASES:
+        • Marriage details and duration
+        • Children and their custody
+        • Financial support and assets
+        • Domestic violence incidents with dates
+        
+        FOR CONSUMER CASES:
+        • Product/service details and bills
+        • Company/seller information
+        • Complaint history and responses
+        • Loss calculation with proof
         
         GUIDELINES:
-        - Ask only essential questions for filing this specific case type
-        - Questions should help gather missing information not covered in conversation
-        - Focus on legal requirements, evidence, parties, timeline, and relief sought
-        - Keep questions clear and specific to Indian legal procedures
-        - Ensure questions help build a strong case foundation
+        - Ask 8-12 comprehensive questions (not just 5-6)
+        - Questions should be specific to the identified case type
+        - Include both mandatory legal requirements and strategic evidence gathering
+        - Frame questions for voice input (clear, simple Hindi)
+        - Cover all elements needed for a complete case filing
+        - Include questions about supporting documents and evidence
+        - Ask about limitation periods and urgency
+        - Ensure questions help establish legal standing and jurisdiction
         
-        Write in \(getLanguageName(for: language)) language maintaining the exact format above.
+        Write questions in \(getLanguageName(for: language)) that are optimized for voice responses.
         """
         
         let requestBody: [String: Any] = [
@@ -623,7 +678,7 @@ class BhashiniManager: NSObject, ObservableObject {
     
     // MARK: - Main ASR Function for Language Detection
     
-    func getTranscriptionFromAudio() async throws -> String {
+    func getTranscriptionFromAudio(duration: TimeInterval = 15.0) async throws -> String {
         print("🎤 Starting voice recording for ASR transcription...")
         
         // 1. Request microphone permission
@@ -632,15 +687,78 @@ class BhashiniManager: NSObject, ObservableObject {
             throw BhashiniError.microphonePermissionDenied
         }
         
-        // 2. Record audio for 15 seconds
-        let audioData = try await recordAudio(duration: 15.0)
-        print("✅ Audio recorded successfully (15 seconds)")
+        // 2. Record audio for specified duration
+        let audioData = try await recordAudio(duration: duration)
+        print("✅ Audio recorded successfully (\(duration) seconds)")
         
         // 3. Use Bhashini ASR (Hindi model) to get transcription
         let transcription = try await performASRTranscription(audioData: audioData)
         
         print("📝 Bhashini ASR transcription: '\(transcription)'")
         return transcription
+    }
+    
+    // New function for tap-to-start/tap-to-stop recording
+    func startRecording() async throws {
+        print("🎤 Starting tap-to-stop voice recording...")
+        
+        // 1. Request microphone permission
+        let hasPermission = await requestMicrophonePermission()
+        guard hasPermission else {
+            throw BhashiniError.microphonePermissionDenied
+        }
+        
+        // 2. Start recording (no duration limit)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let audioURL = documentsPath.appendingPathComponent("tap_recording.wav")
+        
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+        ]
+        
+        do {
+            audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
+            audioRecorder?.record()
+            print("🔴 Recording started - tap again to stop...")
+        } catch {
+            throw BhashiniError.audioRecordingFailed
+        }
+    }
+    
+    func stopRecordingAndTranscribe() async throws -> String {
+        print("⏹️ Stopping recording and starting transcription...")
+        
+        guard let recorder = audioRecorder, recorder.isRecording else {
+            throw BhashiniError.audioRecordingFailed
+        }
+        
+        // Stop recording
+        recorder.stop()
+        
+        // Read recorded audio data
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let audioURL = documentsPath.appendingPathComponent("tap_recording.wav")
+        
+        do {
+            let audioData = try Data(contentsOf: audioURL)
+            
+            // Clean up audio file
+            try? FileManager.default.removeItem(at: audioURL)
+            
+            // Get transcription
+            let transcription = try await performASRTranscription(audioData: audioData)
+            
+            print("📝 Bhashini ASR transcription: '\(transcription)'")
+            return transcription
+            
+        } catch {
+            throw BhashiniError.audioRecordingFailed
+        }
     }
     
     func detectLanguageFromAudio() async throws -> String {

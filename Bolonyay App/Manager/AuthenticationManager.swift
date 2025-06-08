@@ -11,9 +11,11 @@ class AuthenticationManager: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var userProfile: UserProfile?
+    @Published var rememberMe = false
     
     private let auth = Auth.auth()
     private let firestore = Firestore.firestore()
+    private let keychainManager = KeychainManager.shared
     
     init() {
         // Configure Google Sign-In
@@ -29,6 +31,9 @@ class AuthenticationManager: ObservableObject {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientId)
         }
         
+        // Initialize Remember Me preference
+        rememberMe = keychainManager.isRememberMeEnabled()
+        
         // Listen for auth state changes
         auth.addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
@@ -40,6 +45,19 @@ class AuthenticationManager: ObservableObject {
                 }
             }
         }
+    }
+    
+    // MARK: - Auto Login
+    func attemptAutoLogin() async {
+        guard let credentials = keychainManager.getCredentials(),
+              let email = credentials.email,
+              let password = credentials.password else {
+            print("🔑 No saved credentials found for auto-login")
+            return
+        }
+        
+        print("🔑 Attempting auto-login for: \(email)")
+        await signInWithEmail(email: email, password: password, shouldSaveCredentials: false)
     }
     
     // MARK: - Google Sign-In
@@ -140,13 +158,21 @@ class AuthenticationManager: ObservableObject {
         isLoading = false
     }
     
-    func signInWithEmail(email: String, password: String) async {
+    func signInWithEmail(email: String, password: String, shouldSaveCredentials: Bool = true) async {
         isLoading = true
         errorMessage = nil
         
         do {
             let authResult = try await auth.signIn(withEmail: email, password: password)
             let user = authResult.user
+            
+            // Save credentials if remember me is enabled and this is a manual login
+            if shouldSaveCredentials && rememberMe {
+                let saved = keychainManager.saveCredentials(email: email, password: password)
+                if !saved {
+                    print("⚠️ Failed to save credentials to Keychain")
+                }
+            }
             
             // Load user profile and check onboarding status
             await loadUserProfile(userId: user.uid)
@@ -164,6 +190,25 @@ class AuthenticationManager: ObservableObject {
         }
         
         isLoading = false
+    }
+    
+    // MARK: - Remember Me Management
+    func toggleRememberMe() {
+        rememberMe.toggle()
+        keychainManager.saveRememberMePreference(rememberMe)
+        
+        if !rememberMe {
+            // If user disabled remember me, clear any saved credentials
+            keychainManager.clearCredentials()
+        }
+    }
+    
+    func loadSavedCredentials() -> (email: String?, password: String?)? {
+        return keychainManager.getCredentials()
+    }
+    
+    func getSavedEmail() -> String? {
+        return keychainManager.getSavedEmail()
     }
     
     // MARK: - Helper Methods
@@ -294,7 +339,7 @@ class AuthenticationManager: ObservableObject {
     }
     
     // MARK: - Sign Out
-    func signOut() {
+    func signOut(clearSavedCredentials: Bool = false) {
         do {
             try auth.signOut()
             GIDSignIn.sharedInstance.signOut()
@@ -303,6 +348,12 @@ class AuthenticationManager: ObservableObject {
             userProfile = nil
             currentUser = nil
             isSignedIn = false
+            
+            // Clear saved credentials if requested
+            if clearSavedCredentials {
+                keychainManager.clearCredentials()
+                rememberMe = false
+            }
             
             // Navigate back to login
             NotificationCenter.default.post(name: NSNotification.Name("NavigateToLogin"), object: nil)

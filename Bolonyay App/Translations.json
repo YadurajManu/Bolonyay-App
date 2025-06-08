@@ -47,7 +47,17 @@
     "by_continuing_agree": "By continuing, you agree to",
     "privacy_policy": "Privacy Policy",
     "and": "and",
-    "terms_conditions": "Terms & Conditions"
+    "terms_conditions": "Terms & Conditions",
+    "case_filing_questions": "Case Filing Questions",
+    "speak_answer": "Speak your answer",
+    "voice_input_hindi": "Speak in Hindi",
+    "or_type": "Or type your answer",
+    "submit_answer": "Submit Answer",
+    "voice_recording_failed": "Voice recording failed",
+    "all_questions_required": "Please answer all questions to proceed",
+    "question_number": "Question",
+    "remember_me": "Remember Me",
+    "forgot_password": "Forgot Password?"
   },
   "hi": {
     "welcome": "स्वागत",
@@ -97,7 +107,17 @@
     "by_continuing_agree": "जारी रखने से, आप सहमत हैं",
     "privacy_policy": "गोपनीयता नीति",
     "and": "और",
-    "terms_conditions": "नियम और शर्तें"
+    "terms_conditions": "नियम और शर्तें",
+    "case_filing_questions": "केस फाइलिंग के सवाल",
+    "speak_answer": "अपना जवाब बोलें",
+    "voice_input_hindi": "हिंदी में बोलें",
+    "or_type": "या अपना जवाब टाइप करें",
+    "submit_answer": "जवाब भेजें",
+    "voice_recording_failed": "आवाज़ रिकॉर्डिंग फेल हुई",
+    "all_questions_required": "आगे बढ़ने के लिए कृपया सभी सवालों के जवाब दें",
+    "question_number": "सवाल",
+    "remember_me": "मुझे याद रखें",
+    "forgot_password": "पासवर्ड भूल गए?"
   },
   "gu": {
     "welcome": "સ્વાગત",

@@ -89,19 +89,32 @@ struct PractitionerDashboardView: View {
         }
         .alert("Logout", isPresented: $showLogoutAlert) {
             Button("Cancel", role: .cancel) { }
+            
+            // Regular logout (keeps credentials if Remember Me is enabled)
             Button("Logout", role: .destructive) {
-                logout()
+                logout(clearCredentials: false)
+            }
+            
+            // Logout and clear saved credentials
+            if authManager.rememberMe {
+                Button("Logout & Clear Saved Login", role: .destructive) {
+                    logout(clearCredentials: true)
+                }
             }
         } message: {
-            Text("Are you sure you want to logout?")
+            if authManager.rememberMe {
+                Text("Choose logout option. 'Logout & Clear Saved Login' will remove your saved credentials.")
+            } else {
+                Text("Are you sure you want to logout?")
+            }
         }
         .onAppear {
             animateContent = true
         }
     }
     
-    private func logout() {
-        authManager.signOut()
+    private func logout(clearCredentials: Bool = false) {
+        authManager.signOut(clearSavedCredentials: clearCredentials)
         coordinator.reset()
     }
 }

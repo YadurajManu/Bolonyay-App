@@ -707,9 +707,9 @@ class VoiceCaseFilingManager: ObservableObject {
         // Start audio level monitoring
         startAudioLevelMonitoring()
         
-        // Start actual recording in background
+        // Start actual recording
         Task {
-            await performVoiceRecording()
+            await startRecording()
         }
     }
     
@@ -724,24 +724,39 @@ class VoiceCaseFilingManager: ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
         stopAudioLevelMonitoring()
+        
+        // Stop recording and transcribe
+        Task {
+            await stopRecordingAndTranscribe()
+        }
     }
     
-    private func performVoiceRecording() async {
+    private func startRecording() async {
         do {
-            // Wait for recording to complete
-            while isRecording {
-                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            try await bhashiniManager.startRecording()
+            print("🔴 Recording started - tap again to stop...")
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = error.localizedDescription
+                self.recordingState = .error
+                self.isProcessing = false
+                self.isRecording = false
+                print("❌ Failed to start recording: \(error)")
             }
-            
-            // Step 1: Get transcription from Bhashini ASR
-            print("📝 Getting transcription from Bhashini ASR (Language: \(localizationManager.currentLanguage))...")
+        }
+    }
+    
+    private func stopRecordingAndTranscribe() async {
+        do {
+            // Step 1: Stop recording and get transcription from Bhashini ASR
+            print("📝 Stopping recording and getting transcription from Bhashini ASR...")
             
             DispatchQueue.main.async {
                 self.recordingState = .processing
                 self.isProcessing = true
             }
             
-            let transcriptionText = try await bhashiniManager.getTranscriptionFromAudio()
+            let transcriptionText = try await bhashiniManager.stopRecordingAndTranscribe()
             
             DispatchQueue.main.async {
                 self.currentTranscription = transcriptionText
@@ -883,31 +898,82 @@ class VoiceCaseFilingManager: ObservableObject {
     }
     
     private func parseCaseAnalysis(_ analysis: String) {
+        print("🔍 Parsing case analysis response...")
+        print("📋 Full response: \(analysis)")
+        
         // Parse the AI response to extract case type, details, and questions
         let lines = analysis.components(separatedBy: .newlines)
         var currentSection = ""
         var questions: [String] = []
+        var detailsLines: [String] = []
         
         for line in lines {
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
             
-            if trimmedLine.contains("CASE TYPE:") {
-                caseType = trimmedLine.replacingOccurrences(of: "CASE TYPE:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-            } else if trimmedLine.contains("CASE DETAILS:") {
+            if trimmedLine.uppercased().contains("CASE TYPE:") {
+                caseType = trimmedLine.replacingOccurrences(of: "CASE TYPE:", with: "", options: .caseInsensitive)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                currentSection = ""
+            } else if trimmedLine.uppercased().contains("CASE DETAILS:") {
                 currentSection = "details"
-            } else if trimmedLine.contains("QUESTIONS:") {
+            } else if trimmedLine.uppercased().contains("QUESTIONS:") {
                 currentSection = "questions"
             } else if !trimmedLine.isEmpty {
-                if currentSection == "details" && caseDetails.isEmpty {
-                    caseDetails = trimmedLine
-                } else if currentSection == "questions" && trimmedLine.hasPrefix("-") {
-                    questions.append(trimmedLine.replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+                if currentSection == "details" {
+                    detailsLines.append(trimmedLine)
+                } else if currentSection == "questions" {
+                    // Accept various question formats
+                    if trimmedLine.hasPrefix("-") || 
+                       trimmedLine.hasPrefix("•") || 
+                       trimmedLine.hasPrefix("1.") ||
+                       trimmedLine.hasPrefix("2.") ||
+                       trimmedLine.contains("आपका") ||
+                       trimmedLine.contains("क्या") ||
+                       trimmedLine.contains("कौन") ||
+                       trimmedLine.contains("कब") ||
+                       trimmedLine.contains("कहाँ") ||
+                       trimmedLine.contains("कैसे") ||
+                       trimmedLine.contains("What") ||
+                       trimmedLine.contains("Who") ||
+                       trimmedLine.contains("When") ||
+                       trimmedLine.contains("Where") ||
+                       trimmedLine.contains("How") {
+                        
+                        let cleanQuestion = trimmedLine
+                            .replacingOccurrences(of: "^[-•\\d\\.\\s]+", with: "", options: .regularExpression)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        
+                        if cleanQuestion.count > 10 { // Only add substantial questions
+                            questions.append(cleanQuestion)
+                        }
+                    }
                 }
             }
         }
         
+        // Join details if multiple lines
+        if !detailsLines.isEmpty {
+            caseDetails = detailsLines.joined(separator: " ")
+        }
+        
         filingQuestions = questions
         userResponses = Array(repeating: "", count: questions.count)
+        
+        print("✅ Parsed case analysis:")
+        print("   Case Type: \(caseType)")
+        print("   Case Details: \(caseDetails)")
+        print("   Questions Count: \(questions.count)")
+        print("   Questions: \(questions)")
+        
+        // IMPORTANT: Set the state to questionsReady after parsing
+        if !questions.isEmpty && !caseType.isEmpty {
+            caseFilingState = .questionsReady
+            print("✅ Case filing state set to questionsReady")
+        } else {
+            print("❌ Parsing failed - missing questions or case type")
+            caseFilingState = .error
+            errorMessage = "Failed to extract case information from AI response"
+        }
     }
     
     func submitCaseResponse(_ response: String, for questionIndex: Int) {
@@ -1094,6 +1160,134 @@ struct VoiceCaseFilingView: View {
     @ObservedObject var manager: VoiceCaseFilingManager
     @EnvironmentObject var localizationManager: LocalizationManager
     
+    private var recordingButtonAction: () -> Void {
+        return {
+            if manager.isRecording {
+                manager.stopVoiceRecording()
+            } else if manager.recordingState == .completed {
+                manager.continueConversation()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    manager.startVoiceRecording()
+                }
+            } else {
+                manager.startVoiceRecording()
+            }
+        }
+    }
+    
+    private var recordingButtonContent: some View {
+        ZStack {
+            recordingPulseRings
+            mainButtonBackground
+            innerHighlight
+            audioLevelVisualization
+            buttonIcon
+            processingIndicator
+        }
+    }
+    
+    private var recordingPulseRings: some View {
+        Group {
+            if manager.isRecording {
+                ForEach(0..<3) { index in
+                    Circle()
+                        .stroke(Color.red.opacity(0.4 - Double(index) * 0.1), lineWidth: 2)
+                        .frame(width: 120 + CGFloat(index * 25), height: 120 + CGFloat(index * 25))
+                        .scaleEffect(manager.isRecording ? 1.3 : 0.8)
+                        .opacity(manager.isRecording ? 0.7 : 0)
+                        .animation(
+                            .easeInOut(duration: 1.5)
+                            .repeatForever(autoreverses: false)
+                            .delay(Double(index) * 0.3),
+                            value: manager.isRecording
+                        )
+                }
+            }
+        }
+    }
+    
+    private var mainButtonBackground: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: manager.isRecording ? 
+                        [Color.red.opacity(0.9), Color.red.opacity(0.7)] :
+                        [Color.blue.opacity(0.9), Color.blue.opacity(0.7)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 110, height: 110)
+            .shadow(
+                color: (manager.isRecording ? Color.red : Color.blue).opacity(0.4), 
+                radius: manager.isRecording ? 20 : 15, 
+                x: 0, 
+                y: manager.isRecording ? 8 : 5
+            )
+            .scaleEffect(manager.isRecording ? 1.05 : 1.0)
+            .animation(.spring(duration: 0.4, bounce: 0.2), value: manager.isRecording)
+    }
+    
+    private var innerHighlight: some View {
+        Circle()
+            .fill(Color.white.opacity(0.15))
+            .frame(width: 90, height: 90)
+            .scaleEffect(manager.isRecording ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.3), value: manager.isRecording)
+    }
+    
+    private var audioLevelVisualization: some View {
+        Group {
+            if manager.isRecording {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.white.opacity(0.6), Color.white.opacity(0.1)],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 40
+                        )
+                    )
+                    .frame(
+                        width: 60 + CGFloat(manager.audioLevel * 40), 
+                        height: 60 + CGFloat(manager.audioLevel * 40)
+                    )
+                    .animation(.easeInOut(duration: 0.1), value: manager.audioLevel)
+            }
+        }
+    }
+    
+    private var buttonIcon: some View {
+        ZStack {
+            if manager.isRecording {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white)
+                    .frame(width: 24, height: 24)
+                    .scaleEffect(manager.isRecording ? 1.0 : 0.0)
+                    .animation(.spring(duration: 0.3, bounce: 0.4).delay(0.1), value: manager.isRecording)
+            } else {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundColor(.white)
+                    .scaleEffect(manager.isRecording ? 0.0 : 1.0)
+                    .animation(.spring(duration: 0.3, bounce: 0.4), value: manager.isRecording)
+            }
+        }
+    }
+    
+    private var processingIndicator: some View {
+        Group {
+            if manager.isProcessing {
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(Color.white, lineWidth: 3)
+                    .frame(width: 130, height: 130)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: manager.isProcessing)
+            }
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 24) {
             // Voice Recording Interface
@@ -1112,38 +1306,8 @@ struct VoiceCaseFilingView: View {
                         }
                         
                         // Main recording button
-                        Button(action: {
-                            if manager.isRecording {
-                                manager.stopVoiceRecording()
-                            } else if manager.recordingState == .completed {
-                                manager.continueConversation()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    manager.startVoiceRecording()
-                                }
-                            } else {
-                                manager.startVoiceRecording()
-                            }
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(manager.isRecording ? Color.red : Color.blue)
-                                    .frame(width: 100, height: 100)
-                                    .shadow(color: (manager.isRecording ? Color.red : Color.blue).opacity(0.3), radius: 10, x: 0, y: 0)
-                                
-                                // Audio level visualization
-                                if manager.isRecording {
-                                    Circle()
-                                        .fill(Color.white.opacity(0.3))
-                                        .frame(width: 100 * CGFloat(manager.audioLevel), height: 100 * CGFloat(manager.audioLevel))
-                                        .animation(.easeInOut(duration: 0.1), value: manager.audioLevel)
-                                }
-                                
-                                Image(systemName: manager.isRecording ? "stop.fill" : "mic.fill")
-                                    .font(.system(size: 32, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .scaleEffect(manager.isRecording ? 1.1 : 1.0)
-                                    .animation(.easeInOut(duration: 0.2), value: manager.isRecording)
-                            }
+                        Button(action: recordingButtonAction) {
+                            recordingButtonContent
                         }
                         .disabled(manager.isProcessing)
                         .buttonStyle(ScaleButtonStyle())
@@ -1465,18 +1629,18 @@ struct VoiceCaseFilingView: View {
         switch manager.recordingState {
         case .idle:
             if manager.conversationHistory.isEmpty {
-                return "Tap to record your case (15 seconds)"
+                return "Tap to start recording your case"
             } else {
-                return "Tap to continue conversation (15 seconds)"
+                return "Tap to continue conversation"
             }
         case .recording:
-            return "Recording... Speak clearly (15 sec max)"
+            return "Recording... Tap again to stop"
         case .processing:
-            return "Understanding your message..."
+            return "Processing your message..."
         case .completed:
             return "Tap to continue conversation"
         case .error:
-            return "Error occurred"
+            return "Error occurred - Try again"
         }
     }
     
@@ -1721,6 +1885,135 @@ struct QuestionCard: View {
     
     @State private var textAnswer = ""
     @State private var isExpanded = false
+    @State private var isRecordingAnswer = false
+    @State private var isProcessingVoice = false
+    @State private var voiceAnswerError: String?
+    @State private var recordingDuration: TimeInterval = 0.0
+    @State private var recordingTimer: Timer?
+    @StateObject private var bhashiniManager = BhashiniManager()
+    
+    private let maxRecordingDuration: TimeInterval = 15.0
+    
+    private var voiceRecordingAction: () -> Void {
+        return {
+            if isRecordingAnswer {
+                stopVoiceRecording()
+            } else {
+                startVoiceRecording()
+            }
+        }
+    }
+    
+    private var voiceRecordingButtonContent: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                questionPulseRings
+                questionMainButton
+                questionInnerHighlight
+                questionButtonIcon
+                questionProcessingIndicator
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isRecordingAnswer ? "Recording..." : "Tap to start")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Text(isRecordingAnswer ? "Tap again to stop & transcribe" : "Speak in Hindi")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.05))
+                .stroke(isRecordingAnswer ? Color.red.opacity(0.5) : Color.blue.opacity(0.3), lineWidth: 1)
+        )
+    }
+    
+    private var questionPulseRings: some View {
+        Group {
+            if isRecordingAnswer {
+                ForEach(0..<2) { index in
+                    Circle()
+                        .stroke(Color.red.opacity(0.5 - Double(index) * 0.2), lineWidth: 1.5)
+                        .frame(width: 50 + CGFloat(index * 15), height: 50 + CGFloat(index * 15))
+                        .scaleEffect(isRecordingAnswer ? 1.4 : 0.8)
+                        .opacity(isRecordingAnswer ? 0.8 : 0)
+                        .animation(
+                            .easeInOut(duration: 1.2)
+                            .repeatForever(autoreverses: false)
+                            .delay(Double(index) * 0.2),
+                            value: isRecordingAnswer
+                        )
+                }
+            }
+        }
+    }
+    
+    private var questionMainButton: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: isRecordingAnswer ? 
+                        [Color.red.opacity(0.8), Color.red.opacity(0.6)] :
+                        [Color.blue.opacity(0.8), Color.blue.opacity(0.6)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 44, height: 44)
+            .shadow(
+                color: (isRecordingAnswer ? Color.red : Color.blue).opacity(0.3), 
+                radius: isRecordingAnswer ? 8 : 4, 
+                x: 0, 
+                y: 3
+            )
+            .scaleEffect(isRecordingAnswer ? 1.1 : 1.0)
+            .animation(.spring(duration: 0.3, bounce: 0.3), value: isRecordingAnswer)
+    }
+    
+    private var questionInnerHighlight: some View {
+        Circle()
+            .fill(Color.white.opacity(0.2))
+            .frame(width: 36, height: 36)
+            .scaleEffect(isRecordingAnswer ? 0.8 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isRecordingAnswer)
+    }
+    
+    private var questionButtonIcon: some View {
+        ZStack {
+            if isRecordingAnswer {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.white)
+                    .frame(width: 12, height: 12)
+                    .scaleEffect(isRecordingAnswer ? 1.0 : 0.0)
+                    .animation(.spring(duration: 0.3, bounce: 0.4).delay(0.1), value: isRecordingAnswer)
+            } else {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .scaleEffect(isRecordingAnswer ? 0.0 : 1.0)
+                    .animation(.spring(duration: 0.3, bounce: 0.4), value: isRecordingAnswer)
+            }
+        }
+    }
+    
+    private var questionProcessingIndicator: some View {
+        Group {
+            if isProcessingVoice {
+                Circle()
+                    .trim(from: 0, to: 0.6)
+                    .stroke(Color.white, lineWidth: 2)
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isProcessingVoice)
+            }
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1742,10 +2035,40 @@ struct QuestionCard: View {
                     }
                 }
                 
-                Text(question)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(isExpanded ? nil : 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(question)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(isExpanded ? nil : 2)
+                    
+                    // Voice recording indicator
+                    if isRecordingAnswer {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(isRecordingAnswer ? 1.2 : 1.0)
+                                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isRecordingAnswer)
+                            
+                            Text("Recording... \(formatDuration(recordingDuration))")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.red)
+                                .monospacedDigit()
+                        }
+                    }
+                    
+                    if isProcessingVoice {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                            
+                            Text("Converting speech to text...")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
                 
                 Spacer()
                 
@@ -1770,6 +2093,17 @@ struct QuestionCard: View {
                                 .foregroundColor(.green)
                             
                             Spacer()
+                            
+                            Button(action: {
+                                withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
+                                    isExpanded = true
+                                    textAnswer = answer
+                                }
+                            }) {
+                                Text("Edit")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
                         }
                         
                         Text(answer)
@@ -1782,28 +2116,92 @@ struct QuestionCard: View {
                                     .stroke(Color.green.opacity(0.3), lineWidth: 1)
                             )
                     } else if isExpanded {
-                        VStack(spacing: 8) {
-                            TextField("Type your answer...", text: $textAnswer)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .font(.system(size: 14))
+                        VStack(spacing: 12) {
+                            // Voice Input Section
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("हिंदी में बोलकर जवाब दें (Speak in Hindi)")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.blue)
+                                    
+                                    Spacer()
+                                }
+                                
+                                // Voice Recording Button
+                                Button(action: voiceRecordingAction) {
+                                    voiceRecordingButtonContent
+                                }
+                                .disabled(isProcessingVoice)
+                                .buttonStyle(PlainButtonStyle())
+                            }
                             
+                            // Text Input Section
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("या टाइप करें (Or type)")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                    
+                                    Spacer()
+                                }
+                                
+                                TextField("Type your answer...", text: $textAnswer, axis: .vertical)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .font(.system(size: 14))
+                                    .lineLimit(3...6)
+                            }
+                            
+                            // Error Display
+                            if let error = voiceAnswerError {
+                                HStack {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.red)
+                                    
+                                    Text(error)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.red)
+                                    
+                                    Spacer()
+                                }
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.red.opacity(0.1))
+                                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                            
+                            // Submit Button
                             HStack {
+                                Button(action: {
+                                    withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
+                                        isExpanded = false
+                                        textAnswer = ""
+                                        voiceAnswerError = nil
+                                    }
+                                }) {
+                                    Text("Cancel")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            Capsule()
+                                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                        )
+                                }
+                                
                                 Spacer()
                                 
                                 Button(action: {
-                                    if !textAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        onAnswerSubmit(textAnswer)
-                                        textAnswer = ""
-                                        withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
-                                            isExpanded = false
-                                        }
-                                    }
+                                    submitAnswer()
                                 }) {
                                     HStack(spacing: 6) {
                                         Image(systemName: "checkmark")
                                             .font(.system(size: 12, weight: .bold))
                                         
-                                        Text("Submit")
+                                        Text("Submit Answer")
                                             .font(.system(size: 14, weight: .semibold))
                                     }
                                     .foregroundColor(.white)
@@ -1811,7 +2209,7 @@ struct QuestionCard: View {
                                     .padding(.vertical, 8)
                                     .background(
                                         Capsule()
-                                            .fill(Color.orange)
+                                            .fill(textAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.green)
                                     )
                                 }
                                 .disabled(textAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1831,6 +2229,105 @@ struct QuestionCard: View {
         .onAppear {
             textAnswer = answer
         }
+        .onDisappear {
+            cleanupRecording()
+        }
+    }
+    
+    // MARK: - Voice Recording Functions
+    
+    private func startVoiceRecording() {
+        print("🎤 Starting voice recording for question \(questionNumber)...")
+        
+        isRecordingAnswer = true
+        isProcessingVoice = false
+        voiceAnswerError = nil
+        recordingDuration = 0.0
+        
+        // Start recording timer
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            recordingDuration += 0.1
+            
+            // Auto-stop at max duration (safety limit)
+            if recordingDuration >= maxRecordingDuration {
+                stopVoiceRecording()
+            }
+        }
+        
+        // Start actual recording
+        Task {
+            await performVoiceRecording()
+        }
+    }
+    
+    private func stopVoiceRecording() {
+        print("⏹️ Stopping voice recording for question \(questionNumber)...")
+        
+        isRecordingAnswer = false
+        isProcessingVoice = true
+        
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        
+        // Start transcription process
+        Task {
+            await performVoiceRecording()
+        }
+    }
+    
+    private func performVoiceRecording() async {
+        do {
+            if isRecordingAnswer {
+                // Start recording
+                print("🎤 Starting recording for question \(questionNumber)...")
+                try await bhashiniManager.startRecording()
+                
+            } else {
+                // Stop recording and transcribe
+                print("📝 Stopping recording and transcribing for question \(questionNumber)...")
+                let transcription = try await bhashiniManager.stopRecordingAndTranscribe()
+                
+                await MainActor.run {
+                    self.textAnswer = transcription
+                    self.isProcessingVoice = false
+                    self.voiceAnswerError = nil
+                    print("✅ Voice answer transcribed: '\(transcription)'")
+                }
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.voiceAnswerError = "Voice recording failed: \(error.localizedDescription)"
+                self.isProcessingVoice = false
+                self.isRecordingAnswer = false
+                print("❌ Voice recording failed for question \(self.questionNumber): \(error)")
+            }
+        }
+    }
+    
+    private func submitAnswer() {
+        let finalAnswer = textAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !finalAnswer.isEmpty {
+            onAnswerSubmit(finalAnswer)
+            withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
+                isExpanded = false
+            }
+            cleanupRecording()
+        }
+    }
+    
+    private func cleanupRecording() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        isRecordingAnswer = false
+        isProcessingVoice = false
+        recordingDuration = 0.0
+        voiceAnswerError = nil
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let seconds = Int(duration)
+        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
 }
 
