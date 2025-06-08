@@ -43,13 +43,7 @@ struct PractitionerDashboardView: View {
                 }
                 .tag(DashboardTab.newCase)
             
-            // Documents Tab
-            DocumentsTabView(isAnimated: animateContent)
-                .tabItem {
-                    Image(systemName: DashboardTab.documents.icon)
-                    Text(localizationManager.text("documents"))
-                }
-                .tag(DashboardTab.documents)
+
             
             // Reports Tab
             ReportsTabView(isAnimated: animateContent)
@@ -116,7 +110,6 @@ struct PractitionerDashboardView: View {
 enum DashboardTab: String, CaseIterable {
     case home = "Home"
     case newCase = "New Case"
-    case documents = "Documents"
     case reports = "Reports"
     case help = "Help"
     
@@ -124,7 +117,6 @@ enum DashboardTab: String, CaseIterable {
         switch self {
         case .home: return "house.fill"
         case .newCase: return "plus.rectangle.fill"
-        case .documents: return "doc.text.fill"
         case .reports: return "chart.bar.fill"
         case .help: return "questionmark.circle.fill"
         }
@@ -134,7 +126,6 @@ enum DashboardTab: String, CaseIterable {
         switch self {
         case .home: return "Dashboard overview"
         case .newCase: return "File a new case"
-        case .documents: return "Manage documents"
         case .reports: return "View reports"
         case .help: return "Get help"
         }
@@ -186,6 +177,17 @@ struct HomeTabView: View {
                             }
                             
                             Spacer()
+                            
+                            // Bolo logo image
+                            Image("bolo")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 65, height: 65)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(color: .white.opacity(0.2), radius: 6, x: 0, y: 3)
+                                .scaleEffect(isAnimated ? 1.0 : 0.8)
+                                .opacity(isAnimated ? 1.0 : 0.0)
+                                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.3), value: isAnimated)
                             
                             // Compact logout button
                             Button(action: onLogout) {
@@ -247,35 +249,7 @@ struct NewCaseTabView: View {
     }
 }
 
-// MARK: - Documents Tab View
-struct DocumentsTabView: View {
-    let isAnimated: Bool
-    @EnvironmentObject var localizationManager: LocalizationManager
-    
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea(.all)
-            
-            VStack(spacing: 0) {
-                // Custom header
-                HStack {
-                    Text(localizationManager.text("documents"))
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 20)
-                
-                ScrollView {
-                    DocumentsContent(isAnimated: isAnimated)
-                        .padding(.horizontal, 20)
-                }
-            }
-        }
-    }
-}
+
 
 // MARK: - Reports Tab View
 struct ReportsTabView: View {

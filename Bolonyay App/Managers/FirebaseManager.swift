@@ -31,6 +31,13 @@ class FirebaseManager: ObservableObject {
                 case .advocate: return "Advocate (Lawyer)"
                 }
             }
+            
+            var icon: String {
+                switch self {
+                case .petitioner: return "person.fill"
+                case .advocate: return "briefcase.fill"
+                }
+            }
         }
     }
     

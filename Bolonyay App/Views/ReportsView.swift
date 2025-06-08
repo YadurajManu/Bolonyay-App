@@ -14,10 +14,10 @@ struct ReportsView: View {
     @State private var isAnimated = false
     
     enum ReportsTab: String, CaseIterable {
-        case overview = "Overview"
-        case cases = "My Cases"
-        case sessions = "Sessions"
-        case analytics = "Analytics"
+        case overview = "overview"
+        case cases = "cases"
+        case sessions = "sessions"
+        case analytics = "analytics"
         
         var icon: String {
             switch self {
@@ -27,72 +27,75 @@ struct ReportsView: View {
             case .analytics: return "chart.pie.fill"
             }
         }
+        
+        func localizedName(_ localizationManager: LocalizationManager) -> String {
+            switch self {
+            case .overview: return localizationManager.text("overview")
+            case .cases: return localizationManager.text("my_cases")
+            case .sessions: return localizationManager.text("sessions")
+            case .analytics: return localizationManager.text("analytics")
+            }
+        }
     }
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // Header
-                ReportsHeaderView(
+                ElegantReportsHeader(
                     selectedTab: $selectedTab,
-                    isAnimated: $isAnimated
+                    isAnimated: $isAnimated,
+                    localizationManager: localizationManager
                 )
                 
                 // Content
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 24) {
                         switch selectedTab {
                         case .overview:
-                            OverviewContent(
+                            ElegantOverviewContent(
                                 cases: cases,
                                 sessions: sessions,
                                 statistics: statistics,
-                                isAnimated: isAnimated
+                                isAnimated: isAnimated,
+                                localizationManager: localizationManager
                             )
                             
                         case .cases:
-                            CasesContent(
+                            ElegantCasesContent(
                                 cases: cases,
                                 isAnimated: isAnimated,
+                                localizationManager: localizationManager,
                                 onRefresh: { await loadCases() }
                             )
                             
                         case .sessions:
-                            SessionsContent(
+                            ElegantSessionsContent(
                                 sessions: sessions,
                                 isAnimated: isAnimated,
+                                localizationManager: localizationManager,
                                 onRefresh: { await loadSessions() }
                             )
                             
                         case .analytics:
-                            AnalyticsContent(
+                            ElegantAnalyticsContent(
                                 statistics: statistics,
                                 cases: cases,
-                                isAnimated: isAnimated
+                                isAnimated: isAnimated,
+                                localizationManager: localizationManager
                             )
                         }
                         
                         Spacer(minLength: 100)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
                 }
                 .refreshable {
                     await loadAllData()
                 }
             }
-            .background(
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.black,
-                        Color.blue.opacity(0.1),
-                        Color.black
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-            )
+            .background(Color.black.ignoresSafeArea())
             .navigationBarHidden(true)
         }
         .onAppear {
@@ -106,11 +109,11 @@ struct ReportsView: View {
         }
         .overlay {
             if isLoading {
-                LoadingOverlay()
+                ElegantLoadingOverlay()
             }
         }
-        .alert("Error", isPresented: .constant(errorMessage != nil)) {
-            Button("OK") {
+        .alert(localizationManager.text("error"), isPresented: .constant(errorMessage != nil)) {
+            Button(localizationManager.text("ok")) {
                 errorMessage = nil
             }
         } message: {
@@ -121,7 +124,6 @@ struct ReportsView: View {
     // MARK: - Data Loading
     
     private func loadAllData() async {
-        // Ensure user exists before loading any data
         await ensureUserExists()
         
         await withTaskGroup(of: Void.self) { group in
@@ -132,12 +134,10 @@ struct ReportsView: View {
     }
     
     private func ensureUserExists() async {
-        // Check if user already exists
         if firebaseManager.getCurrentUser() != nil {
-            return // User already exists
+            return
         }
         
-        // Create a user for reports access
         do {
             let deviceName = UIDevice.current.name
             let userName = deviceName.isEmpty ? "BoloNyay User" : deviceName
@@ -197,164 +197,187 @@ struct ReportsView: View {
     }
 }
 
-// MARK: - Reports Header View
-struct ReportsHeaderView: View {
+// MARK: - Elegant Reports Header
+struct ElegantReportsHeader: View {
     @Binding var selectedTab: ReportsView.ReportsTab
     @Binding var isAnimated: Bool
+    let localizationManager: LocalizationManager
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Title
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Reports & Analytics")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.white)
+        VStack(spacing: 32) {
+            // Title Section
+            VStack(spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(localizationManager.text("reports"))
+                            .font(.system(size: 32, weight: .bold, design: .default))
+                            .foregroundColor(.white)
+                        
+                        Text(localizationManager.text("track_legal_journey"))
+                            .font(.system(size: 16, weight: .medium, design: .default))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
                     
-                    Text("Track your legal journey")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    
+                    // Connection Status
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(FirebaseManager.shared.isConnected ? Color.white : Color.red)
+                            .frame(width: 6, height: 6)
+                        
+                        Text(FirebaseManager.shared.isConnected ? 
+                             localizationManager.text("connected") : 
+                             localizationManager.text("offline"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
                 }
                 
-                Spacer()
-                
-                // Firebase Connection Status
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(FirebaseManager.shared.isConnected ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    
-                    Text(FirebaseManager.shared.isConnected ? "Connected" : "Offline")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                }
+                // Elegant Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 1)
             }
             .scaleEffect(isAnimated ? 1.0 : 0.95)
             .opacity(isAnimated ? 1.0 : 0.0)
             .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.1), value: isAnimated)
             
             // Tab Selector
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(ReportsView.ReportsTab.allCases, id: \.self) { tab in
-                        TabButton(
-                            tab: tab,
-                            isSelected: selectedTab == tab,
-                            action: {
-                                withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                                    selectedTab = tab
-                                }
-                            }
-                        )
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-            .scaleEffect(isAnimated ? 1.0 : 0.95)
-            .opacity(isAnimated ? 1.0 : 0.0)
-            .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.2), value: isAnimated)
+            ElegantTabSelector(
+                tabs: ReportsView.ReportsTab.allCases,
+                selectedTab: $selectedTab,
+                localizationManager: localizationManager,
+                isAnimated: isAnimated
+            )
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 10)
-        .background(
-            Color.black.opacity(0.3)
-                .blur(radius: 10)
-        )
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
     }
 }
 
-struct TabButton: View {
+// MARK: - Elegant Tab Selector
+struct ElegantTabSelector: View {
+    let tabs: [ReportsView.ReportsTab]
+    @Binding var selectedTab: ReportsView.ReportsTab
+    let localizationManager: LocalizationManager
+    let isAnimated: Bool
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs, id: \.self) { tab in
+                ElegantTabButton(
+                    tab: tab,
+                    isSelected: selectedTab == tab,
+                    localizationManager: localizationManager,
+                    action: {
+                        withAnimation(.spring(duration: 0.4, bounce: 0.2)) {
+                            selectedTab = tab
+                        }
+                    }
+                )
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .scaleEffect(isAnimated ? 1.0 : 0.95)
+        .opacity(isAnimated ? 1.0 : 0.0)
+        .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.2), value: isAnimated)
+    }
+}
+
+struct ElegantTabButton: View {
     let tab: ReportsView.ReportsTab
     let isSelected: Bool
+    let localizationManager: LocalizationManager
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            VStack(spacing: 8) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(isSelected ? .black : .white.opacity(0.6))
                 
-                Text(tab.rawValue)
-                    .font(.system(size: 14, weight: .semibold))
+                Text(tab.localizedName(localizationManager))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isSelected ? .black : .white.opacity(0.6))
+                    .multilineTextAlignment(.center)
             }
-            .foregroundColor(isSelected ? .black : .white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
             .background(
-                Capsule()
-                    .fill(isSelected ? Color.white : Color.white.opacity(0.1))
-                    .stroke(Color.white.opacity(0.3), lineWidth: isSelected ? 0 : 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.white : Color.clear)
             )
         }
-        .buttonStyle(ScaleButtonStyle())
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
-// MARK: - Overview Content
-struct OverviewContent: View {
+// MARK: - Elegant Overview Content
+struct ElegantOverviewContent: View {
     let cases: [FirebaseManager.CaseRecord]
     let sessions: [FirebaseManager.ConversationSession]
     let statistics: CaseStatistics?
     let isAnimated: Bool
+    let localizationManager: LocalizationManager
     
     var body: some View {
-        VStack(spacing: 24) {
-            // Quick Stats Cards
+        VStack(spacing: 32) {
+            // Stats Grid
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                StatCard(
-                    title: "Total Cases",
+                ElegantStatCard(
+                    title: localizationManager.text("total_cases"),
                     value: "\(cases.count)",
                     icon: "folder.fill",
-                    color: .blue,
                     animationDelay: 0.3
                 )
                 
-                StatCard(
-                    title: "Active Sessions",
+                ElegantStatCard(
+                    title: localizationManager.text("sessions"),
                     value: "\(sessions.count)",
                     icon: "message.fill",
-                    color: .green,
                     animationDelay: 0.4
                 )
                 
-                StatCard(
-                    title: "Filed This Month",
-                    value: "\(casesThisMonth)",
-                    icon: "calendar.badge.plus",
-                    color: .orange,
+                ElegantStatCard(
+                    title: localizationManager.text("filed_cases"),
+                    value: "\(filedCasesCount)",
+                    icon: "checkmark.circle.fill",
                     animationDelay: 0.5
                 )
                 
-                StatCard(
-                    title: "Success Rate",
+                ElegantStatCard(
+                    title: localizationManager.text("success_rate"),
                     value: "\(Int(successRate))%",
                     icon: "chart.line.uptrend.xyaxis",
-                    color: .purple,
                     animationDelay: 0.6
                 )
             }
             
-            // Recent Cases
-            if !cases.isEmpty {
-                RecentCasesSection(
+            // Recent Activity
+            if !cases.isEmpty || !sessions.isEmpty {
+                ElegantRecentActivity(
                     cases: Array(cases.prefix(3)),
+                    sessions: Array(sessions.prefix(2)),
+                    localizationManager: localizationManager,
                     animationDelay: 0.7
                 )
             }
-            
-            // Quick Actions
-            QuickActionsSection(animationDelay: 0.8)
         }
     }
     
-    private var casesThisMonth: Int {
-        let calendar = Calendar.current
-        let now = Date()
-        return cases.filter { calendar.isDate($0.createdAt, equalTo: now, toGranularity: .month) }.count
+    private var filedCasesCount: Int {
+        cases.filter { $0.status == .filed }.count
     }
     
     private var successRate: Double {
@@ -364,95 +387,187 @@ struct OverviewContent: View {
     }
 }
 
-struct StatCard: View {
+// MARK: - Elegant Stat Card
+struct ElegantStatCard: View {
     let title: String
     let value: String
     let icon: String
-    let color: Color
     let animationDelay: Double
     @State private var isVisible = false
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             HStack {
-                ZStack {
-                    Circle()
-                        .fill(color.opacity(0.2))
-                        .frame(width: 40, height: 40)
-                    
-                    Image(systemName: icon)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(color)
-                }
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
                 
                 Spacer()
             }
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
                 
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
+        .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.white.opacity(0.05))
-                .stroke(color.opacity(0.3), lineWidth: 1)
-                .shadow(color: color.opacity(0.1), radius: 8, x: 0, y: 4)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
         .scaleEffect(isVisible ? 1.0 : 0.8)
         .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.4).delay(animationDelay), value: isVisible)
         .onAppear {
-            isVisible = true
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
         }
     }
 }
 
-// MARK: - Cases Content
-struct CasesContent: View {
+// MARK: - Elegant Recent Activity
+struct ElegantRecentActivity: View {
     let cases: [FirebaseManager.CaseRecord]
-    let isAnimated: Bool
-    let onRefresh: () async -> Void
+    let sessions: [FirebaseManager.ConversationSession]
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    @State private var isVisible = false
     
     var body: some View {
         VStack(spacing: 20) {
-            // Header
             HStack {
-                Text("My Legal Cases")
+                Text(localizationManager.text("recent_activity"))
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
                 
                 Spacer()
-                
-                Button(action: {
-                    Task { await onRefresh() }
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.blue)
+            }
+            
+            VStack(spacing: 12) {
+                ForEach(Array(cases.enumerated()), id: \.element.id) { index, caseRecord in
+                    ElegantActivityItem(
+                        title: caseRecord.caseNumber,
+                        subtitle: caseRecord.caseType,
+                        icon: "folder.fill",
+                        date: caseRecord.createdAt,
+                        animationDelay: animationDelay + Double(index) * 0.1
+                    )
                 }
-                .buttonStyle(ScaleButtonStyle())
+                
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    ElegantActivityItem(
+                        title: localizationManager.text("conversation_session"),
+                        subtitle: "\(session.totalMessages) " + localizationManager.text("messages"),
+                        icon: "message.fill",
+                        date: session.startedAt,
+                        animationDelay: animationDelay + Double(cases.count + index) * 0.1
+                    )
+                }
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantActivityItem: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let date: Date
+    let animationDelay: Double
+    @State private var isVisible = false
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Circle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer()
+            
+            Text(DateFormatter.elegantShort.string(from: date))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .scaleEffect(isVisible ? 1.0 : 0.9)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.5, bounce: 0.2).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+// MARK: - Elegant Cases Content
+struct ElegantCasesContent: View {
+    let cases: [FirebaseManager.CaseRecord]
+    let isAnimated: Bool
+    let localizationManager: LocalizationManager
+    let onRefresh: () async -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            HStack {
+                Text(localizationManager.text("my_cases"))
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Text("\(cases.count)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
             }
             
             if cases.isEmpty {
-                EmptyStateView(
+                ElegantEmptyState(
                     icon: "folder.badge.plus",
-                    title: "No Cases Filed",
-                    message: "Start your legal journey by filing your first case using the voice assistant.",
-                    animationDelay: 0.5,
-                    isAnimated: isAnimated
+                    title: localizationManager.text("no_cases"),
+                    subtitle: localizationManager.text("file_first_case"),
+                    animationDelay: 0.3
                 )
             } else {
                 LazyVStack(spacing: 16) {
                     ForEach(Array(cases.enumerated()), id: \.element.id) { index, caseRecord in
-                        CaseCard(
+                        ElegantCaseCard(
                             caseRecord: caseRecord,
+                            localizationManager: localizationManager,
                             animationDelay: Double(index) * 0.1
                         )
                     }
@@ -462,15 +577,14 @@ struct CasesContent: View {
     }
 }
 
-struct CaseCard: View {
+struct ElegantCaseCard: View {
     let caseRecord: FirebaseManager.CaseRecord
+    let localizationManager: LocalizationManager
     let animationDelay: Double
     @State private var isVisible = false
-    @State private var isExpanded = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(caseRecord.caseNumber)
@@ -479,122 +593,78 @@ struct CaseCard: View {
                     
                     Text(caseRecord.caseType)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 
                 Spacer()
                 
-                VStack(alignment: .trailing, spacing: 4) {
-                    StatusBadge(status: caseRecord.status)
-                    
-                    Text(formatDate(caseRecord.createdAt))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
+                ElegantStatusBadge(status: caseRecord.status, localizationManager: localizationManager)
             }
             
-            // Case Details
             Text(caseRecord.caseDetails)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
-                .lineLimit(isExpanded ? nil : 2)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(2)
             
-            // Expand Button
-            Button(action: {
-                withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
-                    isExpanded.toggle()
-                }
-            }) {
-                HStack {
-                    Text(isExpanded ? "Show Less" : "Show More")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.blue)
-                    
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.blue)
-                }
-            }
-            .buttonStyle(ScaleButtonStyle())
-            
-            // Expanded Content
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    if !caseRecord.userResponses.isEmpty {
-                        Text("Responses: \(caseRecord.userResponses.filter { !$0.isEmpty }.count)/\(caseRecord.filingQuestions.count)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.green)
-                    }
-                    
-                    HStack {
-                        Text("Language:")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
-                        
-                        Text(caseRecord.language.capitalized)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                        
-                        if let azureId = caseRecord.azureSessionId, !azureId.isEmpty {
-                            Label("Azure Connected", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .scale.combined(with: .opacity)
-                ))
+            HStack {
+                Text(DateFormatter.elegant.string(from: caseRecord.createdAt))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+                
+                Spacer()
+                
+                Text(caseRecord.language.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(0.1))
+                    )
             }
         }
-        .padding(16)
+        .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.white.opacity(0.05))
-                .stroke(statusColor(caseRecord.status).opacity(0.3), lineWidth: 1)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
-        .scaleEffect(isVisible ? 1.0 : 0.9)
+        .scaleEffect(isVisible ? 1.0 : 0.95)
         .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay), value: isVisible)
         .onAppear {
-            isVisible = true
-        }
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: date)
-    }
-    
-    private func statusColor(_ status: FirebaseManager.CaseRecord.CaseStatus) -> Color {
-        switch status {
-        case .filed: return .blue
-        case .underReview: return .orange
-        case .pending: return .yellow
-        case .completed: return .green
-        case .rejected: return .red
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
         }
     }
 }
 
-struct StatusBadge: View {
+struct ElegantStatusBadge: View {
     let status: FirebaseManager.CaseRecord.CaseStatus
+    let localizationManager: LocalizationManager
     
     var body: some View {
-        Text(status.displayName)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+        Text(statusText)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(statusColor)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
-                Capsule()
-                    .fill(statusColor.opacity(0.8))
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(statusColor.opacity(0.15))
+                    .stroke(statusColor.opacity(0.3), lineWidth: 1)
             )
+    }
+    
+    private var statusText: String {
+        switch status {
+        case .filed: return localizationManager.text("filed")
+        case .underReview: return localizationManager.text("under_review")
+        case .pending: return localizationManager.text("pending")
+        case .completed: return localizationManager.text("completed")
+        case .rejected: return localizationManager.text("rejected")
+        }
     }
     
     private var statusColor: Color {
@@ -608,45 +678,40 @@ struct StatusBadge: View {
     }
 }
 
-// MARK: - Sessions Content
-struct SessionsContent: View {
+// MARK: - Elegant Sessions Content
+struct ElegantSessionsContent: View {
     let sessions: [FirebaseManager.ConversationSession]
     let isAnimated: Bool
+    let localizationManager: LocalizationManager
     let onRefresh: () async -> Void
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Header
+        VStack(spacing: 24) {
             HStack {
-                Text("Conversation Sessions")
-                    .font(.system(size: 20, weight: .bold))
+                Text(localizationManager.text("sessions"))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.white)
                 
                 Spacer()
                 
-                Button(action: {
-                    Task { await onRefresh() }
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.blue)
-                }
-                .buttonStyle(ScaleButtonStyle())
+                Text("\(sessions.count)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
             }
             
             if sessions.isEmpty {
-                EmptyStateView(
+                ElegantEmptyState(
                     icon: "message.badge.plus",
-                    title: "No Sessions Found",
-                    message: "Your conversation sessions will appear here after using the voice assistant.",
-                    animationDelay: 0.5,
-                    isAnimated: isAnimated
+                    title: localizationManager.text("no_sessions"),
+                    subtitle: localizationManager.text("start_conversation"),
+                    animationDelay: 0.3
                 )
             } else {
                 LazyVStack(spacing: 16) {
                     ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                        SessionCard(
+                        ElegantSessionCard(
                             session: session,
+                            localizationManager: localizationManager,
                             animationDelay: Double(index) * 0.1
                         )
                     }
@@ -656,381 +721,325 @@ struct SessionsContent: View {
     }
 }
 
-struct SessionCard: View {
+struct ElegantSessionCard: View {
     let session: FirebaseManager.ConversationSession
+    let localizationManager: LocalizationManager
     let animationDelay: Double
     @State private var isVisible = false
-    @State private var isExpanded = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Session")
+                    Text(localizationManager.text("session"))
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                    
-                    Text(formatDate(session.startedAt))
-                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
+                    
+                    Text(session.id.prefix(8).uppercased())
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
                 }
                 
                 Spacer()
                 
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("\(session.totalMessages) messages")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.blue)
+                Text("\(session.totalMessages)")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "message.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.5))
                     
-                    Text(session.language.capitalized)
-                        .font(.system(size: 10, weight: .medium))
+                    Text("\(session.totalMessages) " + localizationManager.text("messages"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                
+                Spacer()
+                
+                Text(session.language.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(0.1))
+                    )
+            }
+            
+            Text(DateFormatter.elegant.string(from: session.startedAt))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+// MARK: - Elegant Analytics Content
+struct ElegantAnalyticsContent: View {
+    let statistics: CaseStatistics?
+    let cases: [FirebaseManager.CaseRecord]
+    let isAnimated: Bool
+    let localizationManager: LocalizationManager
+    
+    var body: some View {
+        VStack(spacing: 32) {
+            HStack {
+                Text(localizationManager.text("analytics"))
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            if let stats = statistics {
+                VStack(spacing: 24) {
+                    // Cases by Status
+                    ElegantAnalyticsSection(
+                        title: localizationManager.text("cases_by_status"),
+                        data: stats.casesByStatus,
+                        localizationManager: localizationManager,
+                        animationDelay: 0.3
+                    )
+                    
+                    // Cases by Type
+                    ElegantAnalyticsSection(
+                        title: localizationManager.text("cases_by_type"),
+                        data: stats.casesByType,
+                        localizationManager: localizationManager,
+                        animationDelay: 0.5
+                    )
+                    
+                    // Cases by Language
+                    ElegantAnalyticsSection(
+                        title: localizationManager.text("cases_by_language"),
+                        data: stats.casesByLanguage,
+                        localizationManager: localizationManager,
+                        animationDelay: 0.7
+                    )
+                }
+            } else {
+                ElegantEmptyState(
+                    icon: "chart.bar.fill",
+                    title: localizationManager.text("no_analytics"),
+                    subtitle: localizationManager.text("analytics_available_after_cases"),
+                    animationDelay: 0.3
+                )
+            }
+        }
+    }
+}
+
+struct ElegantAnalyticsSection: View {
+    let title: String
+    let data: [String: Int]
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            VStack(spacing: 12) {
+                ForEach(Array(data.sorted(by: { $0.value > $1.value }).enumerated()), id: \.element.key) { index, item in
+                    ElegantAnalyticsRow(
+                        label: item.key,
+                        value: item.value,
+                        total: data.values.reduce(0, +),
+                        animationDelay: animationDelay + Double(index) * 0.1
+                    )
+                }
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantAnalyticsRow: View {
+    let label: String
+    let value: Int
+    let total: Int
+    let animationDelay: Double
+    @State private var isVisible = false
+    @State private var animateBar = false
+    
+    var percentage: Double {
+        guard total > 0 else { return 0 }
+        return Double(value) / Double(total)
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                
+                Spacer()
+                
+                HStack(spacing: 8) {
+                    Text("\(value)")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("(\(Int(percentage * 100))%)")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
             
-            // Case Number (if available)
-            if let caseNumber = session.caseNumber, !caseNumber.isEmpty {
-                HStack {
-                    Image(systemName: "doc.text.fill")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.green)
+            // Progress Bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.1))
+                        .frame(height: 6)
                     
-                    Text("Filed as: \(caseNumber)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.green)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.8))
+                        .frame(width: animateBar ? geometry.size.width * percentage : 0, height: 6)
+                        .animation(.easeInOut(duration: 1.0).delay(animationDelay), value: animateBar)
                 }
             }
-            
-            // Expand Button
-            Button(action: {
-                withAnimation(.spring(duration: 0.3, bounce: 0.3)) {
-                    isExpanded.toggle()
-                }
-            }) {
-                HStack {
-                    Text(isExpanded ? "Hide Messages" : "View Messages")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.blue)
-                    
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.blue)
-                }
-            }
-            .buttonStyle(ScaleButtonStyle())
-            
-            // Messages (when expanded)
-            if isExpanded {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(session.messages.prefix(5).enumerated()), id: \.element.id) { index, message in
-                            MessageRow(message: message)
-                        }
-                        
-                        if session.messages.count > 5 {
-                            Text("... and \(session.messages.count - 5) more messages")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
-                                .padding(.top, 4)
-                        }
-                    }
-                }
-                .frame(maxHeight: 200)
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .scale.combined(with: .opacity)
-                ))
-            }
+            .frame(height: 6)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
-                .stroke(Color.purple.opacity(0.3), lineWidth: 1)
-        )
-        .scaleEffect(isVisible ? 1.0 : 0.9)
+        .scaleEffect(isVisible ? 1.0 : 0.95)
         .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay), value: isVisible)
         .onAppear {
-            isVisible = true
-        }
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-}
-
-struct MessageRow: View {
-    let message: FirebaseManager.ConversationSession.SessionMessage
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: message.type == .userTranscription ? "person.fill" : "brain.head.profile")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(message.type == .userTranscription ? .blue : .green)
-                .frame(width: 16)
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
             
-            Text(message.content)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
-                .lineLimit(3)
+            DispatchQueue.main.asyncAfter(deadline: .now() + animationDelay) {
+                animateBar = true
+            }
         }
-        .padding(.vertical, 2)
     }
 }
 
-// MARK: - Analytics Content
-struct AnalyticsContent: View {
-    let statistics: CaseStatistics?
-    let cases: [FirebaseManager.CaseRecord]
-    let isAnimated: Bool
+// MARK: - Elegant Empty State
+struct ElegantEmptyState: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let animationDelay: Double
+    @State private var isVisible = false
     
     var body: some View {
         VStack(spacing: 24) {
-            Text("Case Analytics")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(.white)
-            
-            if let stats = statistics {
-                VStack(spacing: 20) {
-                    // Status Distribution
-                    AnalyticsCard(
-                        title: "Cases by Status",
-                        data: stats.casesByStatus,
-                        animationDelay: 0.3
-                    )
-                    
-                    // Type Distribution
-                    AnalyticsCard(
-                        title: "Cases by Type",
-                        data: stats.casesByType,
-                        animationDelay: 0.4
-                    )
-                    
-                    // Language Distribution
-                    AnalyticsCard(
-                        title: "Cases by Language",
-                        data: stats.casesByLanguage,
-                        animationDelay: 0.5
-                    )
-                }
-            } else {
-                EmptyStateView(
-                    icon: "chart.pie.fill",
-                    title: "No Analytics Data",
-                    message: "Analytics will be available once you file some cases.",
-                    animationDelay: 0.5,
-                    isAnimated: isAnimated
-                )
-            }
-        }
-    }
-}
-
-struct AnalyticsCard: View {
-    let title: String
-    let data: [String: Int]
-    let animationDelay: Double
-    @State private var isVisible = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-            
-            if data.isEmpty {
-                Text("No data available")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(data.sorted(by: { $0.value > $1.value })), id: \.key) { key, value in
-                        HStack {
-                            Text(key.capitalized.replacingOccurrences(of: "_", with: " "))
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white)
-                            
-                            Spacer()
-                            
-                            Text("\(value)")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
+            Circle()
                 .fill(Color.white.opacity(0.05))
-                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-        )
-        .scaleEffect(isVisible ? 1.0 : 0.9)
-        .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay), value: isVisible)
-        .onAppear {
-            isVisible = true
-        }
-    }
-}
-
-// MARK: - Supporting Views
-
-struct RecentCasesSection: View {
-    let cases: [FirebaseManager.CaseRecord]
-    let animationDelay: Double
-    @State private var isVisible = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Recent Cases")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
+                .frame(width: 80, height: 80)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundColor(.white.opacity(0.4))
+                )
             
-            VStack(spacing: 12) {
-                ForEach(cases, id: \.id) { caseRecord in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(caseRecord.caseNumber)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                            
-                            Text(caseRecord.caseType)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.blue)
-                        }
-                        
-                        Spacer()
-                        
-                        StatusBadge(status: caseRecord.status)
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.03))
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                    )
-                }
-            }
-        }
-        .scaleEffect(isVisible ? 1.0 : 0.9)
-        .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay), value: isVisible)
-        .onAppear {
-            isVisible = true
-        }
-    }
-}
-
-struct QuickActionsSection: View {
-    let animationDelay: Double
-    @State private var isVisible = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Quick Actions")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
-            
-            VStack(spacing: 12) {
-                QuickActionButton(
-                    title: "Export Report",
-                    icon: "square.and.arrow.up",
-                    color: .blue,
-                    action: { /* Export functionality */ }
-                )
-                
-                QuickActionButton(
-                    title: "Download PDF",
-                    icon: "doc.text.fill",
-                    color: .green,
-                    action: { /* PDF download */ }
-                )
-                
-                QuickActionButton(
-                    title: "Share Analytics",
-                    icon: "chart.bar.xaxis",
-                    color: .purple,
-                    action: { /* Share functionality */ }
-                )
-            }
-        }
-        .scaleEffect(isVisible ? 1.0 : 0.9)
-        .opacity(isVisible ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay), value: isVisible)
-        .onAppear {
-            isVisible = true
-        }
-    }
-}
-
-struct QuickActionButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(color)
-                
+            VStack(spacing: 8) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.8))
                 
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
+                Text(subtitle)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+                    .multilineTextAlignment(.center)
             }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.05))
-                    .stroke(color.opacity(0.3), lineWidth: 1)
-            )
         }
-        .buttonStyle(ScaleButtonStyle())
+        .padding(40)
+        .scaleEffect(isVisible ? 1.0 : 0.8)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
     }
 }
 
-
-
-struct LoadingOverlay: View {
+// MARK: - Elegant Loading Overlay
+struct ElegantLoadingOverlay: View {
+    @State private var rotation = 0.0
+    
     var body: some View {
         ZStack {
-            Color.black.opacity(0.6)
+            Color.black.opacity(0.7)
                 .ignoresSafeArea()
             
             VStack(spacing: 16) {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(1.2)
+                Circle()
+                    .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Circle()
+                            .trim(from: 0, to: 0.3)
+                            .stroke(Color.white, lineWidth: 3)
+                            .rotationEffect(.degrees(rotation))
+                    )
+                    .onAppear {
+                        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                            rotation = 360
+                        }
+                    }
                 
-                Text("Loading Reports...")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
+                Text("Loading...")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
             }
-            .padding(40)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.black.opacity(0.8))
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-            )
         }
     }
+}
+
+// MARK: - Date Formatter Extensions
+extension DateFormatter {
+    static let elegant: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
+    static let elegantShort: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM dd"
+        return formatter
+    }()
 }
 
  

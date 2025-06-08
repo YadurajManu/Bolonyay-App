@@ -292,17 +292,38 @@ struct MyCasesContent: View {
     let selectedTab: MyCasesTab
     let animationDelay: Double
     let isAnimated: Bool
+    @StateObject private var firebaseManager = FirebaseManager.shared
+    @EnvironmentObject var localizationManager: LocalizationManager
+    @State private var cases: [FirebaseManager.CaseRecord] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     
     var body: some View {
         VStack(spacing: 16) {
-            // Content based on selected tab
-            EmptyStateView(
-                icon: selectedTab.icon,
-                title: "No \(selectedTab.rawValue)",
-                message: "You haven't filed any cases yet. Click 'New Case' to get started.",
-                animationDelay: animationDelay,
-                isAnimated: isAnimated
-            )
+            if isLoading {
+                LoadingCasesView(animationDelay: animationDelay)
+            } else if cases.isEmpty {
+                // Show empty state only when no cases exist
+                EmptyStateView(
+                    icon: selectedTab.icon,
+                    title: localizationManager.text("no_filed_cases"),
+                    message: localizationManager.text("file_first_case_message"),
+                    animationDelay: animationDelay,
+                    isAnimated: isAnimated
+                )
+            } else {
+                // Show actual cases
+                LazyVStack(spacing: 12) {
+                    ForEach(Array(filteredCases.enumerated()), id: \.element.id) { index, caseRecord in
+                        CompactCaseCard(
+                            caseRecord: caseRecord,
+                            localizationManager: localizationManager,
+                            animationDelay: animationDelay + Double(index) * 0.1,
+                            isAnimated: isAnimated
+                        )
+                    }
+                }
+            }
         }
         .padding(.vertical, 20)
         .background(
@@ -313,6 +334,225 @@ struct MyCasesContent: View {
         .scaleEffect(isAnimated ? 1.0 : 0.95)
         .opacity(isAnimated ? 1.0 : 0.0)
         .animation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay), value: isAnimated)
+        .onAppear {
+            Task {
+                await loadCases()
+            }
+        }
+        .refreshable {
+            await loadCases()
+        }
+        .alert(localizationManager.text("error"), isPresented: .constant(errorMessage != nil)) {
+            Button(localizationManager.text("ok")) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+    
+    private var filteredCases: [FirebaseManager.CaseRecord] {
+        switch selectedTab {
+        case .eFiledCases:
+            return cases.filter { $0.status == .filed || $0.status == .completed }
+        case .eFiledDocuments:
+            return cases // For now, show all cases - can be filtered later for document-specific cases
+        case .deficitCourtFees:
+            return cases.filter { $0.status == .pending }
+        case .rejectedCases:
+            return cases.filter { $0.status == .rejected }
+        case .unprocessedCases:
+            return cases.filter { $0.status == .underReview }
+        }
+    }
+    
+    private func loadCases() async {
+        // Ensure user exists before loading cases
+        await ensureUserExists()
+        
+        isLoading = true
+        
+        do {
+            let fetchedCases = try await firebaseManager.getUserCases()
+            DispatchQueue.main.async {
+                self.cases = fetchedCases
+                self.isLoading = false
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Failed to load cases: \(error.localizedDescription)"
+                self.isLoading = false
+            }
+        }
+    }
+    
+    private func ensureUserExists() async {
+        if firebaseManager.getCurrentUser() != nil {
+            return
+        }
+        
+        do {
+            let deviceName = UIDevice.current.name
+            let userName = deviceName.isEmpty ? "BoloNyay User" : deviceName
+            
+            let user = try await firebaseManager.createUser(
+                email: nil,
+                name: userName,
+                userType: .petitioner,
+                language: localizationManager.currentLanguage
+            )
+            print("✅ Auto-created user for cases: \(user.name)")
+        } catch {
+            print("❌ Failed to create user for cases: \(error)")
+        }
+    }
+}
+
+// MARK: - Loading Cases View
+struct LoadingCasesView: View {
+    let animationDelay: Double
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.05))
+                    .frame(width: 60, height: 60)
+                
+                Circle()
+                    .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Circle()
+                            .trim(from: 0, to: 0.3)
+                            .stroke(Color.white, lineWidth: 3)
+                            .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                    )
+            }
+            .onAppear {
+                withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+            
+            Text("Loading your cases...")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Compact Case Card
+struct CompactCaseCard: View {
+    let caseRecord: FirebaseManager.CaseRecord
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    let isAnimated: Bool
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(caseRecord.caseNumber)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text(caseRecord.caseType)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+                
+                Spacer()
+                
+                CompactStatusBadge(status: caseRecord.status)
+            }
+            
+            // Case Details Preview
+            Text(caseRecord.caseDetails)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(2)
+            
+            // Footer
+            HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    Text(DateFormatter.compact.string(from: caseRecord.createdAt))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                
+                Spacer()
+                
+                Text(caseRecord.language.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white.opacity(0.1))
+                    )
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.05))
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+// MARK: - Compact Status Badge
+struct CompactStatusBadge: View {
+    let status: FirebaseManager.CaseRecord.CaseStatus
+    
+    var body: some View {
+        Text(statusText)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundColor(statusColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(statusColor.opacity(0.15))
+                    .stroke(statusColor.opacity(0.3), lineWidth: 1)
+            )
+    }
+    
+    private var statusText: String {
+        switch status {
+        case .filed: return "Filed"
+        case .underReview: return "Review"
+        case .pending: return "Pending"
+        case .completed: return "Complete"
+        case .rejected: return "Rejected"
+        }
+    }
+    
+    private var statusColor: Color {
+        switch status {
+        case .filed: return .blue
+        case .underReview: return .orange
+        case .pending: return .yellow
+        case .completed: return .green
+        case .rejected: return .red
+        }
     }
 }
 
@@ -1805,29 +2045,7 @@ struct ErrorView: View {
     }
 }
 
-// MARK: - Documents Content
-struct DocumentsContent: View {
-    let isAnimated: Bool
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            SectionHeader(
-                title: "Documents",
-                subtitle: "File miscellaneous documents",
-                animationDelay: 0.5,
-                isAnimated: isAnimated
-            )
-            
-            ComingSoonView(
-                icon: "doc.text.fill",
-                title: "Document Filing",
-                message: "Document filing functionality will be available soon. You'll be able to file affidavits, applications, and other miscellaneous documents.",
-                animationDelay: 0.7,
-                isAnimated: isAnimated
-            )
-        }
-    }
-}
+
 
 // MARK: - Reports Content
 struct ReportsContent: View {
@@ -1841,23 +2059,142 @@ struct ReportsContent: View {
 // MARK: - Help Content
 struct HelpContent: View {
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
+    @StateObject private var firebaseManager = FirebaseManager.shared
+    @StateObject private var authManager = AuthenticationManager()
+    @State private var showLanguagePicker = false
+    @State private var showUserProfile = false
+    @State private var showDeleteConfirmation = false
+    @State private var showLogoutConfirmation = false
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     
     var body: some View {
-        VStack(spacing: 24) {
-            SectionHeader(
-                title: "Help & Support",
-                subtitle: "Get assistance and guidance",
-                animationDelay: 0.5,
-                isAnimated: isAnimated
+        VStack(spacing: 32) {
+            // User Profile Section
+            ElegantUserProfileCard(
+                user: firebaseManager.getCurrentUser(),
+                localizationManager: localizationManager,
+                animationDelay: 0.3,
+                isAnimated: isAnimated,
+                onProfileTap: { showUserProfile = true }
             )
             
-            ComingSoonView(
-                icon: "questionmark.circle.fill",
-                title: "Help Center",
-                message: "Help and support functionality will be available soon. You'll find user guides, FAQs, and contact support.",
-                animationDelay: 0.7,
-                isAnimated: isAnimated
+            // Language Settings
+            ElegantLanguageSettings(
+                currentLanguage: localizationManager.currentLanguage,
+                localizationManager: localizationManager,
+                animationDelay: 0.5,
+                isAnimated: isAnimated,
+                onLanguageChange: { showLanguagePicker = true }
             )
+            
+            // Help Sections
+            VStack(spacing: 20) {
+                ElegantHelpSection(
+                    icon: "questionmark.circle.fill",
+                    title: localizationManager.text("faq"),
+                    subtitle: localizationManager.text("common_questions"),
+                    animationDelay: 0.7,
+                    isAnimated: isAnimated
+                ) {
+                    // FAQ Action
+                }
+                
+                ElegantHelpSection(
+                    icon: "book.fill",
+                    title: localizationManager.text("user_guide"),
+                    subtitle: localizationManager.text("learn_app"),
+                    animationDelay: 0.8,
+                    isAnimated: isAnimated
+                ) {
+                    // User Guide Action
+                }
+                
+                ElegantHelpSection(
+                    icon: "phone.fill",
+                    title: localizationManager.text("contact_support"),
+                    subtitle: localizationManager.text("get_help"),
+                    animationDelay: 0.9,
+                    isAnimated: isAnimated
+                ) {
+                    // Contact Support Action
+                }
+            }
+            
+            // Account Management
+            ElegantAccountManagement(
+                localizationManager: localizationManager,
+                animationDelay: 1.0,
+                isAnimated: isAnimated,
+                onDeleteAccount: { showDeleteConfirmation = true },
+                onLogout: { showLogoutConfirmation = true }
+            )
+            
+            Spacer(minLength: 100)
+        }
+        .sheet(isPresented: $showLanguagePicker) {
+            ElegantLanguagePicker(
+                localizationManager: localizationManager,
+                onLanguageSelected: { language in
+                    localizationManager.setLanguage(language)
+                    showLanguagePicker = false
+                }
+            )
+        }
+        .sheet(isPresented: $showUserProfile) {
+            ElegantUserProfileView(
+                user: firebaseManager.getCurrentUser(),
+                localizationManager: localizationManager
+            )
+        }
+        .alert(localizationManager.text("logout"), isPresented: $showLogoutConfirmation) {
+            Button(localizationManager.text("cancel"), role: .cancel) { }
+            Button(localizationManager.text("logout"), role: .destructive) {
+                logout()
+            }
+        } message: {
+            Text(localizationManager.text("logout_confirmation"))
+        }
+        .alert(localizationManager.text("delete_account"), isPresented: $showDeleteConfirmation) {
+            Button(localizationManager.text("cancel"), role: .cancel) { }
+            Button(localizationManager.text("delete"), role: .destructive) {
+                Task {
+                    await deleteAccount()
+                }
+            }
+        } message: {
+            Text(localizationManager.text("delete_account_warning"))
+        }
+        .alert(localizationManager.text("error"), isPresented: .constant(errorMessage != nil)) {
+            Button(localizationManager.text("ok")) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .overlay {
+            if isLoading {
+                ElegantLoadingOverlay()
+            }
+        }
+    }
+    
+    private func logout() {
+        authManager.signOut()
+        // Reset any other app state as needed
+    }
+    
+    private func deleteAccount() async {
+        isLoading = true
+        
+        // Simulate account deletion process
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        
+        DispatchQueue.main.async {
+            isLoading = false
+            // Add actual account deletion logic here
+            errorMessage = "Account deletion will be implemented soon"
         }
     }
 }
@@ -1927,4 +2264,526 @@ struct ComingSoonView: View {
         .opacity(isAnimated ? 1.0 : 0.0)
         .animation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay + 0.1), value: isAnimated)
     }
-} 
+}
+
+// MARK: - Elegant Help Components
+
+struct ElegantUserProfileCard: View {
+    let user: FirebaseManager.BoloNyayUser?
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    let isAnimated: Bool
+    let onProfileTap: () -> Void
+    @State private var isVisible = false
+    
+    var body: some View {
+        Button(action: onProfileTap) {
+            HStack(spacing: 16) {
+                // Avatar
+                Circle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 60, height: 60)
+                    .overlay(
+                        Image(systemName: user?.userType.icon ?? "person.fill")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(.white)
+                    )
+                
+                // User Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(user?.name ?? localizationManager.text("guest_user"))
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text(user?.email ?? localizationManager.text("no_email"))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                        
+                        Text(localizationManager.text("active"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white.opacity(0.05))
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantLanguageSettings: View {
+    let currentLanguage: String
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    let isAnimated: Bool
+    let onLanguageChange: () -> Void
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text(localizationManager.text("language_settings"))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            Button(action: onLanguageChange) {
+                HStack(spacing: 12) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(localizationManager.text("current_language"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        Text(localizationManager.getCurrentLanguageName())
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.05))
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantHelpSection: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let animationDelay: Double
+    let isAnimated: Bool
+    let action: () -> Void
+    @State private var isVisible = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Circle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white)
+                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.03))
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantAccountManagement: View {
+    let localizationManager: LocalizationManager
+    let animationDelay: Double
+    let isAnimated: Bool
+    let onDeleteAccount: () -> Void
+    let onLogout: () -> Void
+    @State private var isVisible = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text(localizationManager.text("account_management"))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            VStack(spacing: 12) {
+                // Logout Button
+                Button(action: onLogout) {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.orange)
+                        
+                        Text(localizationManager.text("logout"))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.orange)
+                        
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.orange.opacity(0.1))
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Delete Account Button
+                Button(action: onDeleteAccount) {
+                    HStack {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.red)
+                        
+                        Text(localizationManager.text("delete_account"))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.red)
+                        
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.red.opacity(0.1))
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantLanguagePicker: View {
+    let localizationManager: LocalizationManager
+    let onLanguageSelected: (String) -> Void
+    @State private var isAnimated = false
+    
+    private let supportedLanguages = [
+        ("en", "English", "🇺🇸"),
+        ("hi", "हिंदी", "🇮🇳"),
+        ("gu", "ગુજરાતી", "🇮🇳"),
+        ("ur", "اردو", "🇵🇰"),
+        ("mr", "मराठी", "🇮🇳")
+    ]
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 12) {
+                    Text(localizationManager.text("select_language"))
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text(localizationManager.text("choose_preferred_language"))
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 20)
+                
+                // Language Options
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        ForEach(Array(supportedLanguages.enumerated()), id: \.element.0) { index, language in
+                            ElegantLanguageOption(
+                                code: language.0,
+                                name: language.1,
+                                flag: language.2,
+                                isSelected: localizationManager.currentLanguage == language.0,
+                                animationDelay: Double(index) * 0.1,
+                                isAnimated: isAnimated,
+                                onTap: {
+                                    onLanguageSelected(language.0)
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+                
+                Spacer()
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(localizationManager.text("done")) {
+                        onLanguageSelected(localizationManager.currentLanguage)
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(duration: 0.8, bounce: 0.3)) {
+                isAnimated = true
+            }
+        }
+    }
+}
+
+struct ElegantLanguageOption: View {
+    let code: String
+    let name: String
+    let flag: String
+    let isSelected: Bool
+    let animationDelay: Double
+    let isAnimated: Bool
+    let onTap: () -> Void
+    @State private var isVisible = false
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                Text(flag)
+                    .font(.system(size: 24))
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    Text(code.uppercased())
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.green)
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isSelected ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                    .stroke(isSelected ? Color.green.opacity(0.5) : Color.white.opacity(0.1), lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isVisible ? 1.0 : 0.95)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .onAppear {
+            withAnimation(.spring(duration: 0.6, bounce: 0.3).delay(animationDelay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+struct ElegantUserProfileView: View {
+    let user: FirebaseManager.BoloNyayUser?
+    let localizationManager: LocalizationManager
+    @State private var isAnimated = false
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 32) {
+                // Profile Header
+                VStack(spacing: 20) {
+                    Circle()
+                        .fill(Color.white.opacity(0.1))
+                        .frame(width: 100, height: 100)
+                        .overlay(
+                            Image(systemName: user?.userType.icon ?? "person.fill")
+                                .font(.system(size: 40, weight: .medium))
+                                .foregroundColor(.white)
+                        )
+                        .scaleEffect(isAnimated ? 1.0 : 0.8)
+                        .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.2), value: isAnimated)
+                    
+                    VStack(spacing: 8) {
+                        Text(user?.name ?? localizationManager.text("guest_user"))
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Text(user?.email ?? localizationManager.text("no_email"))
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Text(user?.userType.rawValue ?? "Guest")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.2))
+                            )
+                    }
+                }
+                .opacity(isAnimated ? 1.0 : 0.0)
+                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.3), value: isAnimated)
+                
+                // Profile Details
+                VStack(spacing: 16) {
+                    ElegantProfileRow(
+                        icon: "calendar",
+                        title: localizationManager.text("member_since"),
+                        value: DateFormatter.memberSince.string(from: user?.createdAt ?? Date())
+                    )
+                    
+                    ElegantProfileRow(
+                        icon: "globe",
+                        title: localizationManager.text("preferred_language"),
+                        value: localizationManager.getCurrentLanguageName()
+                    )
+                    
+                    ElegantProfileRow(
+                        icon: "person.badge.shield.checkmark",
+                        title: localizationManager.text("account_type"),
+                        value: user?.userType.rawValue ?? "Guest"
+                    )
+                }
+                .opacity(isAnimated ? 1.0 : 0.0)
+                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.5), value: isAnimated)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle(localizationManager.text("profile"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(localizationManager.text("done")) {
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(duration: 0.8, bounce: 0.3)) {
+                isAnimated = true
+            }
+        }
+    }
+}
+
+struct ElegantProfileRow: View {
+    let icon: String
+    let title: String
+    let value: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Circle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+                
+                Text(value)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Date Formatter Extension
+extension DateFormatter {
+    static let memberSince: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+    
+    static let compact: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM dd"
+        return formatter
+    }()
+}
