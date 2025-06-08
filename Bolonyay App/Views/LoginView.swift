@@ -15,7 +15,7 @@ struct LoginView: View {
     @State private var showPrivacyPolicy = false
     @State private var showTermsConditions = false
     @StateObject private var authManager = AuthenticationManager()
-    @StateObject private var localizationManager = LocalizationManager.shared
+    @EnvironmentObject var localizationManager: LocalizationManager
     
 
     
@@ -112,7 +112,7 @@ struct LoginView: View {
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(.black)
                             
-                            Text("Sign in with Apple")
+                            Text(localizationManager.localizedString(for: "sign_in_with_apple"))
                                 .font(.system(size: 17, weight: .medium))
                                 .foregroundColor(.black)
                         }
@@ -150,7 +150,7 @@ struct LoginView: View {
                                         .foregroundColor(.white)
                                 }
                                 
-                                Text("Sign in with Google")
+                                Text(localizationManager.localizedString(for: "sign_in_with_google"))
                                     .font(.system(size: 17, weight: .medium))
                                     .foregroundColor(.white)
                             }

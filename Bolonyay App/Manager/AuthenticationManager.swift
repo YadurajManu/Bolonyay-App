@@ -417,6 +417,20 @@ enum UserType: String, CaseIterable, Codable {
         }
     }
     
+    func localizedTitle(localizationManager: LocalizationManager) -> String {
+        switch self {
+        case .petitioner: return localizationManager.text("petitioner")
+        case .advocate: return localizationManager.text("advocate")
+        }
+    }
+    
+    func localizedDescription(localizationManager: LocalizationManager) -> String {
+        switch self {
+        case .petitioner: return localizationManager.text("petitioner_description")
+        case .advocate: return localizationManager.text("advocate_description")
+        }
+    }
+    
     var description: String {
         switch self {
         case .petitioner: return "File complaints and seek legal assistance"

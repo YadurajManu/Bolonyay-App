@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UserTypeSelectionView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     @State private var animateCards = false
     
     var body: some View {
@@ -9,14 +10,14 @@ struct UserTypeSelectionView: View {
             VStack(spacing: 32) {
                 // Clean description
                 VStack(spacing: 12) {
-                    Text("Choose your role")
+                    Text(localizationManager.text("choose_your_role"))
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(.white)
                         .opacity(animateCards ? 1.0 : 0.0)
                         .offset(y: animateCards ? 0 : 20)
                         .animation(.spring(duration: 0.6, bounce: 0.3).delay(0.2), value: animateCards)
                     
-                    Text("Select how you'll use BoloNyay")
+                    Text(localizationManager.text("select_how_use"))
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.white.opacity(0.7))
                         .opacity(animateCards ? 1.0 : 0.0)
@@ -33,6 +34,7 @@ struct UserTypeSelectionView: View {
                         isSelected: coordinator.userType == .petitioner,
                         animationDelay: 0.4,
                         isAnimated: animateCards,
+                        localizationManager: localizationManager,
                         onTap: {
                             withAnimation(.spring(duration: 0.5, bounce: 0.4)) {
                                 coordinator.userType = .petitioner
@@ -46,6 +48,7 @@ struct UserTypeSelectionView: View {
                         isSelected: coordinator.userType == .advocate,
                         animationDelay: 0.5,
                         isAnimated: animateCards,
+                        localizationManager: localizationManager,
                         onTap: {
                             withAnimation(.spring(duration: 0.5, bounce: 0.4)) {
                                 coordinator.userType = .advocate
@@ -69,6 +72,7 @@ struct CleanUserTypeCard: View {
     let isSelected: Bool
     let animationDelay: Double
     let isAnimated: Bool
+    let localizationManager: LocalizationManager
     let onTap: () -> Void
     
     var body: some View {
@@ -89,12 +93,12 @@ struct CleanUserTypeCard: View {
                 
                 // Title and description
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(userType.rawValue)
+                    Text(userType.localizedTitle(localizationManager: localizationManager))
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
-                    Text(userType.description)
+                    Text(userType.localizedDescription(localizationManager: localizationManager))
                         .font(.system(size: 14, weight: .regular))
                         .foregroundColor(.white.opacity(0.7))
                         .frame(maxWidth: .infinity, alignment: .leading)

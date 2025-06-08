@@ -188,7 +188,7 @@ struct LanguageDetectionView: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.white)
                         } else if !showLanguageDetected {
-                            Text("Tap microphone to start")
+                            Text(localizationManager.text("tap_microphone_to_start"))
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.white.opacity(0.6))
                         }

@@ -2,18 +2,21 @@ import SwiftUI
 
 struct EmailAuthView: View {
     @StateObject private var authManager = AuthenticationManager()
+    @EnvironmentObject var localizationManager: LocalizationManager
     @State private var isSignUp = false
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var fullName = ""
+    @State private var phone = ""
     @State private var animateContent = false
     @State private var showPrivacyPolicy = false
     @State private var showTermsConditions = false
+
     @FocusState private var focusedField: Field?
     
     enum Field: CaseIterable {
-        case fullName, email, password, confirmPassword
+        case fullName, phone, email, password, confirmPassword
     }
     
     var body: some View {
@@ -37,7 +40,7 @@ struct EmailAuthView: View {
                                             .font(.system(size: 16, weight: .medium))
                                             .foregroundColor(.white)
                                         
-                                        Text("Back")
+                                        Text(localizationManager.text("back"))
                                             .font(.system(size: 16, weight: .medium))
                                             .foregroundColor(.white)
                                     }
@@ -61,14 +64,14 @@ struct EmailAuthView: View {
                             
                             // Title
                             VStack(spacing: 8) {
-                                Text(isSignUp ? "Create Account" : "Welcome Back")
+                                Text(isSignUp ? localizationManager.text("create_account") : localizationManager.text("welcome_back"))
                                     .font(.system(size: 28, weight: .bold))
                                     .foregroundColor(.white)
                                     .opacity(animateContent ? 1.0 : 0.0)
                                     .offset(y: animateContent ? 0 : 30)
                                     .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.2), value: animateContent)
                                 
-                                Text(isSignUp ? "Join BoloNyay to get started" : "Sign in to your account")
+                                Text(isSignUp ? localizationManager.text("join_bolonyay_to_get_started") : localizationManager.text("sign_in_to_your_account"))
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.white.opacity(0.7))
                                     .opacity(animateContent ? 1.0 : 0.0)
@@ -81,15 +84,16 @@ struct EmailAuthView: View {
                         VStack(spacing: 20) {
                             // Full Name (Sign Up only)
                             if isSignUp {
-                                CleanTextField(
-                                    title: "Full Name",
+                                VoiceEnabledTextField(
+                                    title: localizationManager.text("full_name"),
                                     text: $fullName,
-                                    placeholder: "Enter your full name",
+                                    placeholder: localizationManager.text("enter_your_full_name"),
                                     icon: "person",
                                     keyboardType: .default,
                                     isFocused: focusedField == .fullName,
                                     animationDelay: 0.4,
-                                    isAnimated: animateContent
+                                    isAnimated: animateContent,
+                                    voiceFieldType: .name
                                 )
                                 .focused($focusedField, equals: .fullName)
                                 .scaleEffect(animateContent ? 1.0 : 0.95)
@@ -98,62 +102,87 @@ struct EmailAuthView: View {
                                 .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.4), value: animateContent)
                             }
                             
+                            // Phone Number (Sign Up only)
+                            if isSignUp {
+                                VoiceEnabledTextField(
+                                    title: localizationManager.text("mobile_number"),
+                                    text: $phone,
+                                    placeholder: localizationManager.text("mobile_placeholder"),
+                                    icon: "phone",
+                                    keyboardType: .phonePad,
+                                    isFocused: focusedField == .phone,
+                                    animationDelay: 0.5,
+                                    isAnimated: animateContent,
+                                    voiceFieldType: .phone
+                                )
+                                .focused($focusedField, equals: .phone)
+                                .scaleEffect(animateContent ? 1.0 : 0.95)
+                                .opacity(animateContent ? 1.0 : 0.0)
+                                .offset(x: animateContent ? 0 : 20)
+                                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.5), value: animateContent)
+                            }
+                            
                             // Email
-                            CleanTextField(
-                                title: "Email Address",
+                            VoiceEnabledTextField(
+                                title: localizationManager.text("email_address"),
                                 text: $email,
-                                placeholder: "your.email@example.com",
+                                placeholder: localizationManager.text("your_email_example"),
                                 icon: "envelope",
                                 keyboardType: .emailAddress,
                                 isFocused: focusedField == .email,
-                                animationDelay: isSignUp ? 0.5 : 0.4,
-                                isAnimated: animateContent
+                                animationDelay: isSignUp ? 0.6 : 0.4,
+                                isAnimated: animateContent,
+                                voiceFieldType: isSignUp ? .email : nil
                             )
                             .focused($focusedField, equals: .email)
                             .scaleEffect(animateContent ? 1.0 : 0.95)
                             .opacity(animateContent ? 1.0 : 0.0)
                             .offset(x: animateContent ? 0 : 20)
-                            .animation(.spring(duration: 0.8, bounce: 0.3).delay(isSignUp ? 0.5 : 0.4), value: animateContent)
+                            .animation(.spring(duration: 0.8, bounce: 0.3).delay(isSignUp ? 0.6 : 0.4), value: animateContent)
                             
                             // Password
-                            CleanTextField(
-                                title: "Password",
+                            VoiceEnabledTextField(
+                                title: localizationManager.text("password"),
                                 text: $password,
-                                placeholder: "Enter your password",
+                                placeholder: localizationManager.text("enter_your_password"),
                                 icon: "lock",
                                 keyboardType: .default,
                                 isFocused: focusedField == .password,
-                                animationDelay: isSignUp ? 0.6 : 0.5,
+                                animationDelay: isSignUp ? 0.7 : 0.5,
                                 isAnimated: animateContent,
-                                isSecure: true
+                                isSecure: true,
+                                voiceFieldType: .password
                             )
                             .focused($focusedField, equals: .password)
                             .scaleEffect(animateContent ? 1.0 : 0.95)
                             .opacity(animateContent ? 1.0 : 0.0)
                             .offset(x: animateContent ? 0 : -20)
-                            .animation(.spring(duration: 0.8, bounce: 0.3).delay(isSignUp ? 0.6 : 0.5), value: animateContent)
+                            .animation(.spring(duration: 0.8, bounce: 0.3).delay(isSignUp ? 0.7 : 0.5), value: animateContent)
                             
                             // Confirm Password (Sign Up only)
                             if isSignUp {
-                                CleanTextField(
-                                    title: "Confirm Password",
+                                VoiceEnabledTextField(
+                                    title: localizationManager.text("confirm_password"),
                                     text: $confirmPassword,
-                                    placeholder: "Confirm your password",
+                                    placeholder: localizationManager.text("confirm_your_password"),
                                     icon: "lock.rotation",
                                     keyboardType: .default,
                                     isFocused: focusedField == .confirmPassword,
-                                    animationDelay: 0.7,
+                                    animationDelay: 0.8,
                                     isAnimated: animateContent,
-                                    isSecure: true
+                                    isSecure: true,
+                                    voiceFieldType: .password
                                 )
                                 .focused($focusedField, equals: .confirmPassword)
                                 .scaleEffect(animateContent ? 1.0 : 0.95)
                                 .opacity(animateContent ? 1.0 : 0.0)
                                 .offset(x: animateContent ? 0 : 20)
-                                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.7), value: animateContent)
+                                .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.8), value: animateContent)
                             }
                         }
                         .padding(.horizontal, 24)
+                        
+
                         
                         // Remember Me Toggle (Sign In only)
                         if !isSignUp {
@@ -178,7 +207,7 @@ struct EmailAuthView: View {
                                             }
                                         }
                                         
-                                        Text("Remember Me")
+                                        Text(localizationManager.text("remember_me"))
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.white.opacity(0.8))
                                     }
@@ -191,7 +220,7 @@ struct EmailAuthView: View {
                                     // TODO: Implement forgot password
                                     print("Forgot password tapped")
                                 }) {
-                                    Text("Forgot Password?")
+                                    Text(localizationManager.text("forgot_password"))
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.white.opacity(0.6))
                                         .underline()
@@ -223,7 +252,7 @@ struct EmailAuthView: View {
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                         .scaleEffect(0.8)
                                 } else {
-                                    Text(isSignUp ? "Create Account" : "Sign In")
+                                    Text(isSignUp ? localizationManager.text("create_account_button") : localizationManager.text("sign_in"))
                                         .font(.system(size: 17, weight: .semibold))
                                         .foregroundColor(.white)
                                 }
@@ -253,7 +282,7 @@ struct EmailAuthView: View {
                                     .fill(Color.white.opacity(0.2))
                                     .frame(height: 1)
                                 
-                                Text("or")
+                                Text(localizationManager.text("or"))
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(.white.opacity(0.6))
                                     .padding(.horizontal, 16)
@@ -270,11 +299,11 @@ struct EmailAuthView: View {
                                 }
                             }) {
                                 HStack(spacing: 4) {
-                                    Text(isSignUp ? "Already have an account?" : "Don't have an account?")
+                                    Text(isSignUp ? localizationManager.text("already_have_account") : localizationManager.text("dont_have_account"))
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.white.opacity(0.7))
                                     
-                                    Text(isSignUp ? "Sign In" : "Sign Up")
+                                    Text(isSignUp ? localizationManager.text("sign_in") : localizationManager.text("sign_up"))
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.white)
                                         .underline()
@@ -290,7 +319,7 @@ struct EmailAuthView: View {
                         // Terms and Privacy - Enhanced with animations
                         if isSignUp {
                             VStack(spacing: 8) {
-                                Text("By creating an account, you agree to")
+                                Text(localizationManager.text("by_creating_account_agree"))
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(.gray)
                                     .multilineTextAlignment(.center)
@@ -301,14 +330,14 @@ struct EmailAuthView: View {
                                             showPrivacyPolicy = true
                                         }
                                     }) {
-                                        Text("Privacy Policy")
+                                        Text(localizationManager.text("privacy_policy"))
                                             .font(.system(size: 13, weight: .semibold))
                                             .foregroundColor(.white)
                                             .underline()
                                     }
                                     .buttonStyle(ScaleButtonStyle())
                                     
-                                    Text("and")
+                                    Text(localizationManager.text("and"))
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(.gray)
                                     
@@ -317,7 +346,7 @@ struct EmailAuthView: View {
                                             showTermsConditions = true
                                         }
                                     }) {
-                                        Text("Terms & Conditions")
+                                        Text(localizationManager.text("terms_conditions_short"))
                                             .font(.system(size: 13, weight: .semibold))
                                             .foregroundColor(.white)
                                             .underline()
@@ -360,6 +389,7 @@ struct EmailAuthView: View {
         .sheet(isPresented: $showTermsConditions) {
             TermsConditionsView()
         }
+
     }
     
     private var isFormValid: Bool {

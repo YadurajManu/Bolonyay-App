@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LocationInfoView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     @State private var showStatePicker = false
     @State private var showDistrictPicker = false
     @State private var showEstablishmentPicker = false
@@ -41,7 +42,7 @@ struct LocationInfoView: View {
             VStack(spacing: 32) {
                 // Clean description
                 VStack(spacing: 12) {
-                    Text("Location & Jurisdiction")
+                    Text(localizationManager.text("location_jurisdiction"))
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(.white)
                         .opacity(animateContent ? 1.0 : 0.0)
@@ -50,7 +51,7 @@ struct LocationInfoView: View {
                     
                     Text(coordinator.userType == .advocate ? 
                          "Where are you enrolled to practice?" :
-                         "Select your preferred jurisdiction")
+                         localizationManager.text("select_preferred_jurisdiction"))
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -64,9 +65,9 @@ struct LocationInfoView: View {
                 VStack(spacing: 16) {
                     // State Picker
                     CleanDropdownField(
-                        title: "Enrolled State",
+                        title: localizationManager.text("enrolled_state"),
                         selectedValue: $coordinator.enrolledState,
-                        placeholder: "Select your state",
+                        placeholder: localizationManager.text("select_your_state"),
                         icon: "map",
                         options: indianStates,
                         isExpanded: $showStatePicker,
@@ -79,9 +80,9 @@ struct LocationInfoView: View {
                     
                     // District Picker
                     CleanDropdownField(
-                        title: "Enrolled District",
+                        title: localizationManager.text("enrolled_district"),
                         selectedValue: $coordinator.enrolledDistrict,
-                        placeholder: "Select your district",
+                        placeholder: localizationManager.text("select_your_district"),
                         icon: "building.2",
                         options: availableDistricts,
                         isExpanded: $showDistrictPicker,
@@ -115,7 +116,7 @@ struct LocationInfoView: View {
                     
                     Text(coordinator.userType == .advocate ? 
                          "Cases matched by jurisdiction" :
-                         "Advocates suggested from your area")
+                         localizationManager.text("advocates_suggested_from_area"))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }

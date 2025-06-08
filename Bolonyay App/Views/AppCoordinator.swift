@@ -87,6 +87,7 @@ class AppCoordinator: ObservableObject {
 
 struct AppCoordinatorView: View {
     @StateObject private var appCoordinator = AppCoordinator()
+    @StateObject private var localizationManager = LocalizationManager.shared
     
     var body: some View {
         ZStack {
@@ -117,19 +118,23 @@ struct AppCoordinatorView: View {
                 
             case .languageDetection:
                 LanguageDetectionView()
+                    .environmentObject(localizationManager)
                     .environmentObject(appCoordinator)
                 
             case .login:
                 LoginView()
+                    .environmentObject(localizationManager)
                     .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LoginCompleted"))) { _ in
                         appCoordinator.startOnboarding()
                     }
                 
             case .emailAuth:
                 EmailAuthView()
+                    .environmentObject(localizationManager)
                 
             case .onboarding:
                 OnboardingView(coordinator: appCoordinator.onboardingCoordinator)
+                    .environmentObject(localizationManager)
                     .onReceive(appCoordinator.onboardingCoordinator.$isOnboardingComplete) { completed in
                         if completed {
                             appCoordinator.completeOnboarding()

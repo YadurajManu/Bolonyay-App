@@ -679,7 +679,7 @@ struct NewCaseContent: View {
         VStack(spacing: 24) {
             SectionHeader(
                 title: localizationManager.text("new_case"),
-                subtitle: "Voice-driven case filing system",
+                subtitle: localizationManager.text("voice_case_filing_subtitle"),
                 animationDelay: 0.5,
                 isAnimated: isAnimated
             )
@@ -1665,11 +1665,11 @@ struct VoiceCaseFilingView: View {
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("File This Case")
+                                    Text(localizationManager.text("file_this_case"))
                                         .font(.system(size: 18, weight: .bold))
                                         .foregroundColor(.orange)
                                     
-                                    Text("Convert conversation to legal filing")
+                                    Text(localizationManager.text("convert_conversation_legal"))
                                         .font(.system(size: 12, weight: .medium))
                                         .foregroundColor(.orange.opacity(0.8))
                                 }
@@ -1718,18 +1718,18 @@ struct VoiceCaseFilingView: View {
         switch manager.recordingState {
         case .idle:
             if manager.conversationHistory.isEmpty {
-                return "Tap to start recording your case"
+                return localizationManager.text("tap_to_start_recording")
             } else {
-                return "Tap to continue conversation"
+                return localizationManager.text("tap_to_continue_conversation")
             }
         case .recording:
-            return "Recording... Tap again to stop"
+            return localizationManager.text("recording_tap_to_stop")
         case .processing:
-            return "Processing your message..."
+            return localizationManager.text("processing_message")
         case .completed:
-            return "Tap to continue conversation"
+            return localizationManager.text("tap_to_continue_conversation")
         case .error:
-            return "Error occurred - Try again"
+            return localizationManager.text("error_try_again")
         }
     }
     
@@ -1764,11 +1764,11 @@ struct CaseFilingView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Case Filing")
+                        Text(localizationManager.text("case_filing"))
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
                         
-                        Text("Let's prepare your legal case")
+                        Text(localizationManager.text("prepare_legal_case"))
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white.opacity(0.7))
                     }
@@ -2445,6 +2445,7 @@ struct QuestionCard: View {
 
 struct ReadyToFileView: View {
     @ObservedObject var manager: VoiceCaseFilingManager
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         VStack(spacing: 24) {
@@ -2460,11 +2461,11 @@ struct ReadyToFileView: View {
             }
             
             VStack(spacing: 12) {
-                Text("Ready to File!")
+                Text(localizationManager.text("ready_to_file"))
                     .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.white)
                 
-                Text("All required information has been collected. Your case is ready for filing.")
+                Text(localizationManager.text("case_ready_filing"))
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
@@ -2472,13 +2473,13 @@ struct ReadyToFileView: View {
             
             // Case Summary
             VStack(alignment: .leading, spacing: 16) {
-                Text("Case Summary")
+                Text(localizationManager.text("case_summary"))
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Type:")
+                        Text(localizationManager.text("case_type"))
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.7))
                         
@@ -2490,7 +2491,7 @@ struct ReadyToFileView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Details:")
+                        Text(localizationManager.text("case_details"))
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.7))
                         
@@ -2499,7 +2500,7 @@ struct ReadyToFileView: View {
                             .foregroundColor(.white)
                     }
                     
-                    Text("Responses: \(manager.userResponses.filter { !$0.isEmpty }.count) completed")
+                    Text(String(format: localizationManager.text("responses_completed"), manager.userResponses.filter { !$0.isEmpty }.count))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.green)
                 }
@@ -2519,7 +2520,7 @@ struct ReadyToFileView: View {
                     Image(systemName: "doc.badge.plus")
                         .font(.system(size: 18, weight: .bold))
                     
-                    Text("File Case Now")
+                    Text(localizationManager.text("file_case_now"))
                         .font(.system(size: 18, weight: .bold))
                 }
                 .foregroundColor(.white)

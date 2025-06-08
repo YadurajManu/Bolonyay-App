@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompletionView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     @State private var showCelebration = false
     @State private var animateElements = false
     
@@ -43,13 +44,13 @@ struct CompletionView: View {
                     
                     // Welcome message
                     VStack(spacing: 12) {
-                        Text("Welcome to BoloNyay!")
+                        Text(localizationManager.text("welcome_bolonyay"))
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
                             .opacity(animateElements ? 1 : 0)
                             .offset(y: animateElements ? 0 : 20)
                         
-                        Text("Your account has been successfully created")
+                        Text(localizationManager.text("account_created_successfully"))
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
@@ -74,7 +75,7 @@ struct CompletionView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(coordinator.fullName.isEmpty ? "User" : coordinator.fullName)
+                            Text(coordinator.fullName.isEmpty ? localizationManager.text("user") : coordinator.fullName)
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,9 +100,9 @@ struct CompletionView: View {
                             .padding(.vertical, 16)
                         
                         VStack(spacing: 12) {
-                            InfoRow(icon: "envelope.fill", title: "Email", value: coordinator.email)
-                            InfoRow(icon: "phone.fill", title: "Mobile", value: coordinator.mobileNumber)
-                            InfoRow(icon: "location.fill", title: "Location", value: "\(coordinator.enrolledDistrict), \(coordinator.enrolledState)")
+                            InfoRow(icon: "envelope.fill", title: localizationManager.text("email"), value: coordinator.email)
+                            InfoRow(icon: "phone.fill", title: localizationManager.text("mobile"), value: coordinator.mobileNumber)
+                            InfoRow(icon: "location.fill", title: localizationManager.text("location"), value: "\(coordinator.enrolledDistrict), \(coordinator.enrolledState)")
                             
                             if coordinator.userType == .advocate && !coordinator.specialization.isEmpty {
                                 InfoRow(icon: "scale.3d", title: "Specialization", value: coordinator.specialization)
@@ -123,7 +124,7 @@ struct CompletionView: View {
                 
                 // Features preview
                 VStack(spacing: 16) {
-                    Text("What's next?")
+                    Text(localizationManager.text("whats_next"))
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
                         .opacity(animateElements ? 1 : 0)
@@ -135,25 +136,25 @@ struct CompletionView: View {
                     ], spacing: 16) {
                         FeatureCard(
                             icon: "doc.text.fill",
-                            title: coordinator.userType == .advocate ? "Manage Cases" : "File Complaints",
+                            title: coordinator.userType == .advocate ? "Manage Cases" : localizationManager.text("file_complaints"),
                             color: .blue
                         )
                         
                         FeatureCard(
                             icon: "person.2.fill",
-                            title: coordinator.userType == .advocate ? "Connect with Clients" : "Find Advocates",
+                            title: coordinator.userType == .advocate ? "Connect with Clients" : localizationManager.text("find_advocates"),
                             color: .purple
                         )
                         
                         FeatureCard(
                             icon: "globe.asia.australia.fill",
-                            title: "Multi-language Support",
+                            title: localizationManager.text("multi_language_support"),
                             color: .green
                         )
                         
                         FeatureCard(
                             icon: "shield.checkered",
-                            title: "Secure & Encrypted",
+                            title: localizationManager.text("secure_encrypted"),
                             color: .orange
                         )
                     }

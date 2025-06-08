@@ -7,6 +7,16 @@ enum OnboardingStep: CaseIterable {
     case locationInfo
     case completion
     
+    func title(localizationManager: LocalizationManager) -> String {
+        switch self {
+        case .userType: return localizationManager.text("choose_your_role")
+        case .basicInfo: return localizationManager.text("basic_information")
+        case .advocateDetails: return localizationManager.text("professional_details")
+        case .locationInfo: return localizationManager.text("location_jurisdiction")
+        case .completion: return localizationManager.text("welcome_bolonyay")
+        }
+    }
+    
     var title: String {
         switch self {
         case .userType: return "Choose Your Role"

@@ -3,6 +3,7 @@ import SwiftUI
 struct OnboardingView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
     @StateObject private var authManager = AuthenticationManager()
+    @EnvironmentObject var localizationManager: LocalizationManager
     @Environment(\.dismiss) private var dismiss
     
     init(coordinator: OnboardingCoordinator? = nil) {
@@ -20,26 +21,31 @@ struct OnboardingView: View {
                 OnboardingProgressHeader(
                     currentStep: coordinator.currentStepNumber,
                     totalSteps: coordinator.totalSteps,
-                    title: coordinator.currentStep.title
+                    title: coordinator.currentStep.title(localizationManager: localizationManager)
                 )
                 
                 // Content
                 TabView(selection: $coordinator.currentStep) {
                     UserTypeSelectionView(coordinator: coordinator)
+                        .environmentObject(localizationManager)
                         .tag(OnboardingStep.userType)
                     
                     BasicInfoView(coordinator: coordinator)
+                        .environmentObject(localizationManager)
                         .tag(OnboardingStep.basicInfo)
                     
                     if coordinator.userType == .advocate {
                         AdvocateDetailsView(coordinator: coordinator)
+                            .environmentObject(localizationManager)
                             .tag(OnboardingStep.advocateDetails)
                     }
                     
                     LocationInfoView(coordinator: coordinator)
+                        .environmentObject(localizationManager)
                         .tag(OnboardingStep.locationInfo)
                     
                     CompletionView(coordinator: coordinator)
+                        .environmentObject(localizationManager)
                         .tag(OnboardingStep.completion)
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
@@ -47,6 +53,7 @@ struct OnboardingView: View {
                 
                 // Navigation Footer
                 OnboardingNavigationFooter(coordinator: coordinator)
+                    .environmentObject(localizationManager)
             }
         }
         .onChange(of: coordinator.isOnboardingComplete) { isComplete in
@@ -108,6 +115,7 @@ struct OnboardingProgressHeader: View {
 // MARK: - Navigation Footer
 struct OnboardingNavigationFooter: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         VStack(spacing: 20) {
@@ -118,7 +126,7 @@ struct OnboardingNavigationFooter: View {
                 }
             }) {
                 HStack(spacing: 8) {
-                    Text(coordinator.currentStep == .completion ? "Get Started" : "Continue")
+                    Text(coordinator.currentStep == .completion ? localizationManager.text("get_started") : localizationManager.text("continue"))
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.black)
                     
@@ -156,7 +164,7 @@ struct OnboardingNavigationFooter: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white.opacity(0.8))
                         
-                        Text("Back")
+                        Text(localizationManager.text("back"))
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(.white.opacity(0.8))
                     }

@@ -2,8 +2,10 @@ import SwiftUI
 
 struct BasicInfoView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
+    @EnvironmentObject var localizationManager: LocalizationManager
     @FocusState private var focusedField: Field?
     @State private var animateFields = false
+
     
     enum Field: CaseIterable {
         case fullName, mobile, email, userId
@@ -32,7 +34,7 @@ struct BasicInfoView: View {
                     }
                     
                     VStack(spacing: 8) {
-                        Text(coordinator.userType == .petitioner ? "Basic Information" : "Your Details")
+                        Text(coordinator.userType == .petitioner ? localizationManager.text("basic_information") : localizationManager.text("your_details"))
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.white)
                             .opacity(animateFields ? 1.0 : 0.0)
@@ -40,8 +42,8 @@ struct BasicInfoView: View {
                             .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.3), value: animateFields)
                         
                         Text(coordinator.userType == .petitioner ? 
-                             "Just the essentials to get you started" :
-                             "Complete your professional profile")
+                             localizationManager.text("just_essentials") :
+                             localizationManager.text("complete_professional"))
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white.opacity(0.7))
                             .multilineTextAlignment(.center)
@@ -52,18 +54,21 @@ struct BasicInfoView: View {
                 }
                 .padding(.top, 20)
                 
+
+                
                 // Form Fields - Dynamic based on user type
                 VStack(spacing: 20) {
                     // Mobile Number (Required for both)
-                    CleanTextField(
-                        title: "Mobile Number",
+                    VoiceEnabledTextField(
+                        title: localizationManager.text("mobile_number"),
                         text: $coordinator.mobileNumber,
-                        placeholder: "+91 98765 43210",
+                        placeholder: localizationManager.text("mobile_placeholder"),
                         icon: "phone",
                         keyboardType: .phonePad,
                         isFocused: focusedField == .mobile,
                         animationDelay: 0.6,
-                        isAnimated: animateFields
+                        isAnimated: animateFields,
+                        voiceFieldType: .phone
                     )
                     .focused($focusedField, equals: .mobile)
                     .scaleEffect(animateFields ? 1.0 : 0.95)
@@ -72,15 +77,16 @@ struct BasicInfoView: View {
                     .animation(.spring(duration: 0.8, bounce: 0.3).delay(0.6), value: animateFields)
                     
                     // Email (Required for both)
-                    CleanTextField(
-                        title: "Email ID",
+                    VoiceEnabledTextField(
+                        title: localizationManager.text("email_id"),
                         text: $coordinator.email,
-                        placeholder: "your.email@example.com",
+                        placeholder: localizationManager.text("email_placeholder"),
                         icon: "envelope",
                         keyboardType: .emailAddress,
                         isFocused: focusedField == .email,
                         animationDelay: 0.7,
-                        isAnimated: animateFields
+                        isAnimated: animateFields,
+                        voiceFieldType: .email
                     )
                     .focused($focusedField, equals: .email)
                     .scaleEffect(animateFields ? 1.0 : 0.95)
@@ -90,9 +96,9 @@ struct BasicInfoView: View {
                     
                     // User ID (Required for both)
                     CleanTextField(
-                        title: "User ID",
+                        title: localizationManager.text("user_id"),
                         text: $coordinator.userId,
-                        placeholder: "Choose a unique username",
+                        placeholder: localizationManager.text("user_id_placeholder"),
                         icon: "at",
                         keyboardType: .default,
                         isFocused: focusedField == .userId,
@@ -107,15 +113,16 @@ struct BasicInfoView: View {
                     
                     // Full Name (Only for Advocates)
                     if coordinator.userType == .advocate {
-                        CleanTextField(
-                            title: "Full Name",
+                        VoiceEnabledTextField(
+                            title: localizationManager.text("full_name"),
                             text: $coordinator.fullName,
-                            placeholder: "Enter your full legal name",
+                            placeholder: localizationManager.text("full_name_placeholder"),
                             icon: "person",
                             keyboardType: .default,
                             isFocused: focusedField == .fullName,
                             animationDelay: 0.9,
-                            isAnimated: animateFields
+                            isAnimated: animateFields,
+                            voiceFieldType: .name
                         )
                         .focused($focusedField, equals: .fullName)
                         .scaleEffect(animateFields ? 1.0 : 0.95)
@@ -138,7 +145,7 @@ struct BasicInfoView: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                     
-                    Text("Secure & encrypted")
+                    Text(localizationManager.text("secure_encrypted"))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -155,6 +162,7 @@ struct BasicInfoView: View {
         .onAppear {
             animateFields = true
         }
+
     }
 }
 

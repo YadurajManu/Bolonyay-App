@@ -165,7 +165,7 @@ class LocalizationManager: ObservableObject {
 class AzureOpenAIManager {
     
     // Azure OpenAI Configuration
-    private let apiKey = "D0IHVWMu9NsEsPpcKm8WIIZ8USoAniWSI59ZeQqy6szDwedgzETkJQQJ99BFACYeBjFXJ3w3AAABACOG9DIy"
+    private let apiKey = "D0IHVWMu9NsEsPpcKm8WIIZ8USoAniWSI59ZeQqy6szDwedgzETkJQQJ99BFACYeBjFXJ3w3AAABACOG9DIy" 
     private let endpoint = "https://bolonyay.openai.azure.com/"
     private let deploymentName = "gpt-4.1"  // Your deployment name
     private let apiVersion = "2024-02-15-preview"
@@ -847,6 +847,106 @@ class AzureOpenAIManager {
         
         throw AzureOpenAIError.invalidResponse
     }
+    
+    // MARK: - Form Data Extraction
+    
+    func extractFormData(prompt: String) async throws -> ExtractedFormData {
+        let url = URL(string: "\(endpoint)openai/deployments/\(deploymentName)/chat/completions?api-version=\(apiVersion)")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        
+        let requestBody: [String: Any] = [
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "You are a precise form data extraction AI. Always respond with valid JSON only."
+                ],
+                [
+                    "role": "user",
+                    "content": prompt
+                ]
+            ],
+            "max_tokens": 300,
+            "temperature": 0.1
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("📤 Sending form data extraction request to Azure OpenAI...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        print("📡 Azure OpenAI Response Code: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: String.Encoding.utf8) ?? "Unknown error"
+            print("❌ Azure OpenAI Error: \(errorMessage)")
+            throw AzureOpenAIError.apiError(httpResponse.statusCode, errorMessage)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AzureOpenAIError.invalidResponse
+        }
+        
+        // Parse the response to extract form data JSON
+        if let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            
+            print("📝 Raw Azure OpenAI response: \(content)")
+            
+            // Clean the response to extract JSON
+            let cleanedContent = content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            
+            // Try to parse the JSON response
+            if let jsonData = cleanedContent.data(using: String.Encoding.utf8) {
+                do {
+                    let extractedData = try JSONDecoder().decode(ExtractedFormData.self, from: jsonData)
+                    print("✅ Successfully parsed extracted form data")
+                    return extractedData
+                } catch {
+                    print("❌ Failed to parse JSON: \(error)")
+                    print("📋 Content was: \(cleanedContent)")
+                }
+            }
+        }
+        
+        // Return empty data if parsing fails
+        return ExtractedFormData(
+            fullName: nil,
+            email: nil,
+            mobileNumber: nil,
+            state: nil,
+            district: nil,
+            userId: nil,
+            confidence: "low"
+        )
+    }
+}
+
+// MARK: - Extracted Form Data Model
+
+struct ExtractedFormData: Codable {
+    let fullName: String?
+    let email: String?
+    let mobileNumber: String?
+    let state: String?
+    let district: String?
+    let userId: String?
+    let confidence: String?
+    
+    var hasAnyData: Bool {
+        return fullName != nil || email != nil || mobileNumber != nil || 
+               state != nil || district != nil || userId != nil
+    }
 }
 
 enum AzureOpenAIError: Error {
@@ -946,9 +1046,17 @@ class BhashiniManager: NSObject, ObservableObject {
         
         do {
             audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
-            audioRecorder?.record()
-            print("🔴 Recording started - tap again to stop...")
+            let recordingStarted = audioRecorder?.record() ?? false
+            
+            if recordingStarted {
+                print("🔴 Recording started successfully - tap again to stop...")
+                print("📊 Recorder state: isRecording=\(audioRecorder?.isRecording ?? false)")
+            } else {
+                print("❌ Failed to start recording")
+                throw BhashiniError.audioRecordingFailed
+            }
         } catch {
+            print("❌ Audio recorder initialization failed: \(error)")
             throw BhashiniError.audioRecordingFailed
         }
     }
@@ -956,9 +1064,17 @@ class BhashiniManager: NSObject, ObservableObject {
     func stopRecordingAndTranscribe() async throws -> String {
         print("⏹️ Stopping recording and starting transcription...")
         
-        guard let recorder = audioRecorder, recorder.isRecording else {
+        guard let recorder = audioRecorder else {
+            print("❌ No audio recorder found")
             throw BhashiniError.audioRecordingFailed
         }
+        
+        guard recorder.isRecording else {
+            print("❌ Recorder is not recording (state: \(recorder.isRecording))")
+            throw BhashiniError.audioRecordingFailed
+        }
+        
+        print("✅ Recorder is active, stopping now...")
         
         // Stop recording
         recorder.stop()
