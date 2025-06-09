@@ -25,6 +25,19 @@ struct EnhancedSavedReportsView: View {
         case byType = "By Type"
         case byLanguage = "By Language"
         
+        func localizedTitle(for localizationManager: LocalizationManager) -> String {
+            if localizationManager.currentLanguage == "hindi" {
+                switch self {
+                case .all: return "सभी रिपोर्ट्स"
+                case .recent: return "हाल की"
+                case .byType: return "प्रकार के अनुसार"
+                case .byLanguage: return "भाषा के अनुसार"
+                }
+            } else {
+                return self.rawValue
+            }
+        }
+        
         var icon: String {
             switch self {
             case .all: return "doc.text.fill"
@@ -41,11 +54,13 @@ struct EnhancedSavedReportsView: View {
             VStack(spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("📄 Saved Reports")
+                        Text(localizationManager.currentLanguage == "hindi" ? "📄 सहेजी गई रिपोर्ट्स" : "📄 Saved Reports")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
                         
-                        Text("\(filteredReports.count) reports • \(reportsManager.getFormattedStorageUsed())")
+                        Text(localizationManager.currentLanguage == "hindi" ? 
+                            "\(filteredReports.count) रिपोर्ट्स • \(reportsManager.getFormattedStorageUsed())" :
+                            "\(filteredReports.count) reports • \(reportsManager.getFormattedStorageUsed())")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white.opacity(0.6))
                     }
@@ -61,7 +76,7 @@ struct EnhancedSavedReportsView: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.white)
                             
-                            Text("Storage")
+                            Text(localizationManager.currentLanguage == "hindi" ? "स्टोरेज" : "Storage")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.white.opacity(0.7))
                         }

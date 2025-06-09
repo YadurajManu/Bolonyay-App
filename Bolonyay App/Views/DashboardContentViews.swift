@@ -3354,14 +3354,15 @@ struct RecentReportsSection: View {
     var body: some View {
         VStack(spacing: 20) {
             SectionHeader(
-                title: "📄 Recent Reports",
-                subtitle: "Quick access to your saved documents",
+                title: localizationManager.currentLanguage == "hindi" ? "📄 हाल की रिपोर्ट्स" : "📄 Recent Reports",
+                subtitle: localizationManager.currentLanguage == "hindi" ? "आपके सहेजे गए दस्तावेजों तक त्वरित पहुंच" : "Quick access to your saved documents",
                 animationDelay: animationDelay,
                 isAnimated: isAnimated
             )
             
             if reportsManager.savedReports.isEmpty {
                 EmptyReportsCard(animationDelay: animationDelay + 0.2, isAnimated: isAnimated)
+                    .environmentObject(localizationManager)
             } else {
                 VStack(spacing: 12) {
                     // Show up to 3 recent reports
@@ -3371,6 +3372,7 @@ struct RecentReportsSection: View {
                             animationDelay: animationDelay + 0.2 + Double(index) * 0.1,
                             isAnimated: isAnimated
                         )
+                        .environmentObject(localizationManager)
                     }
                     
                     // View All Button
@@ -3379,7 +3381,9 @@ struct RecentReportsSection: View {
                             showingAllReports = true
                         }) {
                             HStack(spacing: 8) {
-                                Text("View All \(reportsManager.savedReports.count) Reports")
+                                Text(localizationManager.currentLanguage == "hindi" ? 
+                                    "सभी \(reportsManager.savedReports.count) रिपोर्ट्स देखें" : 
+                                    "View All \(reportsManager.savedReports.count) Reports")
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(.white.opacity(0.8))
                                 
@@ -3424,6 +3428,7 @@ struct RecentReportsSection: View {
 struct EmptyReportsCard: View {
     let animationDelay: Double
     let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         VStack(spacing: 16) {
@@ -3432,11 +3437,13 @@ struct EmptyReportsCard: View {
                 .foregroundColor(.white.opacity(0.3))
             
             VStack(spacing: 8) {
-                Text("No Reports Yet")
+                Text(localizationManager.currentLanguage == "hindi" ? "अभी तक कोई रिपोर्ट नहीं" : "No Reports Yet")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                 
-                Text("Generate your first PDF report to see it here")
+                Text(localizationManager.currentLanguage == "hindi" ? 
+                    "अपनी पहली PDF रिपोर्ट बनाएं और इसे यहाँ देखें" : 
+                    "Generate your first PDF report to see it here")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
@@ -3461,6 +3468,7 @@ struct CompactReportCard: View {
     let isAnimated: Bool
     @State private var showingPreview = false
     @State private var showingShareSheet = false
+    @EnvironmentObject var localizationManager: LocalizationManager
     
     var body: some View {
         HStack(spacing: 12) {
@@ -3483,6 +3491,14 @@ struct CompactReportCard: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
+                    Text(getLocalizedCaseType())
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Circle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 2, height: 2)
+                    
                     Text(report.timeSinceCreation)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
@@ -3563,6 +3579,33 @@ struct CompactReportCard: View {
             return .green
         } else {
             return .cyan
+        }
+    }
+    
+    private func getLocalizedCaseType() -> String {
+        if localizationManager.currentLanguage == "hindi" {
+            let caseTypeLower = report.caseType.lowercased()
+            if caseTypeLower.contains("criminal") {
+                return "आपराधिक मामला"
+            } else if caseTypeLower.contains("civil") {
+                return "नागरिक मामला"
+            } else if caseTypeLower.contains("family") {
+                return "पारिवारिक मामला"
+            } else if caseTypeLower.contains("consumer") {
+                return "उपभोक्ता मामला"
+            } else if caseTypeLower.contains("labor") {
+                return "श्रम मामला"
+            } else if caseTypeLower.contains("property") {
+                return "संपत्ति मामला"
+            } else if caseTypeLower.contains("marriage") {
+                return "विवाह मामला"
+            } else if caseTypeLower.contains("divorce") {
+                return "तलाक मामला"
+            } else {
+                return "कानूनी मामला"
+            }
+        } else {
+            return report.caseType
         }
     }
 }

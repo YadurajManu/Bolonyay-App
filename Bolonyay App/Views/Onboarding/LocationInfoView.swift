@@ -1,40 +1,15 @@
 import SwiftUI
+import AVFoundation
 
 struct LocationInfoView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
     @EnvironmentObject var localizationManager: LocalizationManager
-    @State private var showStatePicker = false
-    @State private var showDistrictPicker = false
-    @State private var showEstablishmentPicker = false
+    @StateObject private var voiceLocationManager = VoiceLocationManager()
     @State private var animateContent = false
     @FocusState private var focusedField: Field?
     
     enum Field: CaseIterable {
         case establishment
-    }
-    
-    private let indianStates = [
-        "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-        "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-        "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-        "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-        "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
-        "Delhi", "Jammu and Kashmir", "Ladakh"
-    ]
-    
-    private var availableDistricts: [String] {
-        // This would typically come from an API based on selected state
-        // For demo purposes, showing sample districts
-        switch coordinator.enrolledState {
-        case "Delhi":
-            return ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"]
-        case "Maharashtra":
-            return ["Mumbai City", "Mumbai Suburban", "Pune", "Nagpur", "Thane", "Nashik", "Aurangabad", "Solapur", "Amravati", "Kolhapur"]
-        case "Karnataka":
-            return ["Bangalore Urban", "Bangalore Rural", "Mysore", "Tumkur", "Belgaum", "Gulbarga", "Dakshina Kannada", "Bellary", "Bijapur", "Shimoga"]
-        default:
-            return ["District 1", "District 2", "District 3", "District 4", "District 5"]
-        }
     }
     
     var body: some View {
@@ -50,8 +25,8 @@ struct LocationInfoView: View {
                         .animation(.spring(duration: 0.6, bounce: 0.3).delay(0.2), value: animateContent)
                     
                     Text(coordinator.userType == .advocate ? 
-                         "Where are you enrolled to practice?" :
-                         localizationManager.text("select_preferred_jurisdiction"))
+                         "Speak your location details" :
+                         localizationManager.text("speak_your_preferred_jurisdiction"))
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -61,52 +36,30 @@ struct LocationInfoView: View {
                 }
                 .padding(.top, 24)
                 
-                // Form Fields - Clean black and white
-                VStack(spacing: 16) {
-                    // State Picker
-                    CleanDropdownField(
-                        title: localizationManager.text("enrolled_state"),
-                        selectedValue: $coordinator.enrolledState,
-                        placeholder: localizationManager.text("select_your_state"),
-                        icon: "map",
-                        options: indianStates,
-                        isExpanded: $showStatePicker,
-                        animationDelay: 0.4,
-                        isAnimated: animateContent
-                    ) {
-                        // Reset district when state changes
-                        coordinator.enrolledDistrict = ""
-                    }
-                    
-                    // District Picker
-                    CleanDropdownField(
-                        title: localizationManager.text("enrolled_district"),
-                        selectedValue: $coordinator.enrolledDistrict,
-                        placeholder: localizationManager.text("select_your_district"),
-                        icon: "building.2",
-                        options: availableDistricts,
-                        isExpanded: $showDistrictPicker,
-                        animationDelay: 0.5,
-                        isAnimated: animateContent,
-                        isDisabled: coordinator.enrolledState.isEmpty
-                    )
-                    
-                    // Establishment (for advocates only)
-                    if coordinator.userType == .advocate {
-                        CleanTextField(
-                            title: "Enrolled Establishment",
-                            text: $coordinator.enrolledEstablishment,
-                            placeholder: "e.g., High Court, District Court, Supreme Court",
-                            icon: "building.columns",
-                            keyboardType: UIKeyboardType.default,
-                            isFocused: focusedField == .establishment,
-                            animationDelay: 0.6,
-                            isAnimated: animateContent
-                        )
-                        .focused($focusedField, equals: .establishment)
-                    }
-                }
+                // Voice Location Input
+                VoiceLocationInputView(
+                    state: $coordinator.enrolledState,
+                    district: $coordinator.enrolledDistrict,
+                    animationDelay: 0.4,
+                    isAnimated: animateContent
+                )
                 .padding(.horizontal, 24)
+                
+                // Establishment (for advocates only)
+                if coordinator.userType == .advocate {
+                    CleanTextField(
+                        title: "Enrolled Establishment",
+                        text: $coordinator.enrolledEstablishment,
+                        placeholder: "e.g., High Court, District Court, Supreme Court",
+                        icon: "building.columns",
+                        keyboardType: UIKeyboardType.default,
+                        isFocused: focusedField == .establishment,
+                        animationDelay: 0.6,
+                        isAnimated: animateContent
+                    )
+                    .focused($focusedField, equals: .establishment)
+                    .padding(.horizontal, 24)
+                }
                 
                 // Security note - minimal design
                 HStack(spacing: 8) {
@@ -128,146 +81,579 @@ struct LocationInfoView: View {
         }
         .onTapGesture {
             focusedField = nil
-            closeAllDropdowns()
         }
         .onAppear {
             animateContent = true
         }
     }
-    
-    private func closeAllDropdowns() {
-        withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
-            showStatePicker = false
-            showDistrictPicker = false
-            showEstablishmentPicker = false
-        }
-    }
 }
 
-struct CleanDropdownField: View {
-    let title: String
-    @Binding var selectedValue: String
-    let placeholder: String
-    let icon: String
-    let options: [String]
-    @Binding var isExpanded: Bool
+// MARK: - Voice Location Input Component
+
+struct VoiceLocationInputView: View {
+    @EnvironmentObject var localizationManager: LocalizationManager
+    @StateObject private var voiceManager = VoiceLocationManager()
+    @Binding var state: String
+    @Binding var district: String
     let animationDelay: Double
     let isAnimated: Bool
-    let isDisabled: Bool
-    let onSelectionChange: (() -> Void)?
-    
-    init(title: String, selectedValue: Binding<String>, placeholder: String, icon: String, options: [String], isExpanded: Binding<Bool>, animationDelay: Double, isAnimated: Bool, isDisabled: Bool = false, onSelectionChange: (() -> Void)? = nil) {
-        self.title = title
-        self._selectedValue = selectedValue
-        self.placeholder = placeholder
-        self.icon = icon
-        self.options = options
-        self._isExpanded = isExpanded
-        self.animationDelay = animationDelay
-        self.isAnimated = isAnimated
-        self.isDisabled = isDisabled
-        self.onSelectionChange = onSelectionChange
-    }
+    @State private var recordingPulse = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Clean title
-            Text(title)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white.opacity(0.9))
-            
-            // Dropdown button
-            Button(action: {
-                if !isDisabled {
-                    withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
-                        isExpanded.toggle()
-                    }
-                }
-            }) {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isDisabled ? .white.opacity(0.3) : (isExpanded ? .white : .white.opacity(0.6)))
-                        .frame(width: 20)
-                    
-                    Text(selectedValue.isEmpty ? placeholder : selectedValue)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isDisabled ? .white.opacity(0.3) : (selectedValue.isEmpty ? .white.opacity(0.6) : .white))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(isDisabled ? .white.opacity(0.3) : .white.opacity(0.6))
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(isDisabled ? 0.02 : (isExpanded ? 0.1 : 0.05)))
-                        .stroke(Color.white.opacity(isDisabled ? 0.1 : (isExpanded ? 0.4 : 0.2)), lineWidth: 1)
-                )
-                .scaleEffect(isExpanded ? 1.02 : 1.0)
-                .animation(.spring(duration: 0.3, bounce: 0.2), value: isExpanded)
+        VStack(spacing: 20) {
+            // Location Input Title
+            VStack(spacing: 8) {
+                Text(localizationManager.currentLanguage == "hindi" ? "अपना स्थान बताएं" : "Speak Your Location")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Text(localizationManager.currentLanguage == "hindi" ? "राज्य और जिले का नाम बोलें" : "Say your state and district name")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
             }
-            .buttonStyle(ScaleButtonStyle())
-            .disabled(isDisabled)
             
-            // Options list
-            if isExpanded && !isDisabled {
-                ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(options, id: \.self) { option in
-                            Button(action: {
-                                withAnimation(.spring(duration: 0.4, bounce: 0.3)) {
-                                    selectedValue = option
-                                    isExpanded = false
-                                    onSelectionChange?()
-                                }
-                            }) {
-                                HStack {
-                                    Text(option)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    
-                                    if selectedValue == option {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(selectedValue == option ? Color.white.opacity(0.1) : Color.white.opacity(0.03))
-                                        .stroke(Color.white.opacity(selectedValue == option ? 0.3 : 0.1), lineWidth: 1)
-                                )
+            // Voice Recording Button
+            Button(action: {
+                voiceManager.toggleRecording()
+            }) {
+                VStack(spacing: 12) {
+                    ZStack {
+                        // Pulse rings during recording
+                        if voiceManager.recordingState == .recording {
+                            ForEach(0..<3) { index in
+                                Circle()
+                                    .stroke(Color.blue.opacity(0.3 - Double(index) * 0.1), lineWidth: 2)
+                                    .frame(width: 80 + CGFloat(index * 20), height: 80 + CGFloat(index * 20))
+                                    .scaleEffect(recordingPulse ? 1.2 : 0.8)
+                                    .opacity(recordingPulse ? 0.6 : 0)
+                                    .animation(
+                                        .easeInOut(duration: 1.0)
+                                        .repeatForever(autoreverses: false)
+                                        .delay(Double(index) * 0.2),
+                                        value: recordingPulse
+                                    )
                             }
-                            .buttonStyle(ScaleButtonStyle())
                         }
+                        
+                        // Main button
+                        Circle()
+                            .fill(buttonBackgroundColor)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                        
+                        // Icon
+                        Image(systemName: microphoneIcon)
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundColor(microphoneColor)
                     }
+                    
+                    // Status text
+                    statusText
                 }
-                .frame(maxHeight: 200)
-                .padding(.top, 8)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.95).combined(with: .opacity).combined(with: .move(edge: .top)),
-                    removal: .scale(scale: 0.95).combined(with: .opacity).combined(with: .move(edge: .top))
-                ))
+            }
+            .disabled(voiceManager.recordingState == .processing)
+            .scaleEffect(voiceManager.recordingState == .recording ? 1.1 : 1.0)
+            .animation(.spring(duration: 0.3, bounce: 0.4), value: voiceManager.recordingState)
+            
+            // Display extracted location
+            if !state.isEmpty || !district.isEmpty {
+                locationDisplay
             }
         }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.05))
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
         .opacity(isAnimated ? 1.0 : 0.0)
-        .offset(y: isAnimated ? 0 : 20)
+        .offset(y: isAnimated ? 0 : 30)
         .animation(.spring(duration: 0.6, bounce: 0.4).delay(animationDelay), value: isAnimated)
+        .onChange(of: voiceManager.extractedState) { oldValue, newValue in
+            if let newState = newValue, !newState.isEmpty {
+                state = newState
+            }
+        }
+        .onChange(of: voiceManager.extractedDistrict) { oldValue, newValue in
+            if let newDistrict = newValue, !newDistrict.isEmpty {
+                district = newDistrict
+            }
+        }
+        .onChange(of: voiceManager.recordingState) { oldValue, newValue in
+            if newValue == .recording {
+                recordingPulse = true
+            } else {
+                recordingPulse = false
+            }
+        }
+    }
+    
+    private var statusText: some View {
+        Group {
+            switch voiceManager.recordingState {
+            case .idle:
+                Text(localizationManager.currentLanguage == "hindi" ? "स्थान बताएं" : "Speak your location")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                
+            case .recording:
+                Text(localizationManager.currentLanguage == "hindi" ? "सुन रहा हूं..." : "Listening...")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.blue)
+                
+            case .processing:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                    
+                    Text(localizationManager.currentLanguage == "hindi" ? "प्रोसेसिंग..." : "Processing...")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+                
+            case .completed:
+                Text(localizationManager.currentLanguage == "hindi" ? "✅ स्थान मिल गया" : "✅ Location found")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.green)
+                
+            case .error:
+                Text(localizationManager.currentLanguage == "hindi" ? "❌ दोबारा कोशिश करें" : "❌ Try again")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.red)
+            }
+        }
+    }
+    
+    private var locationDisplay: some View {
+        VStack(spacing: 12) {
+            if !state.isEmpty {
+                HStack {
+                    Image(systemName: "map")
+                        .foregroundColor(.blue)
+                        .frame(width: 20)
+                    
+                    Text(localizationManager.currentLanguage == "hindi" ? "राज्य:" : "State:")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Text(state)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                }
+            }
+            
+            if !district.isEmpty {
+                HStack {
+                    Image(systemName: "building.2")
+                        .foregroundColor(.blue)
+                        .frame(width: 20)
+                    
+                    Text(localizationManager.currentLanguage == "hindi" ? "जिला:" : "District:")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Text(district)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.blue.opacity(0.1))
+                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+        )
+    }
+    
+    private var microphoneIcon: String {
+        switch voiceManager.recordingState {
+        case .recording:
+            return "mic.fill"
+        case .processing:
+            return "waveform"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .error:
+            return "mic.slash"
+        default:
+            return "mic"
+        }
+    }
+    
+    private var microphoneColor: Color {
+        switch voiceManager.recordingState {
+        case .recording:
+            return .red
+        case .processing:
+            return .blue
+        case .completed:
+            return .green
+        case .error:
+            return .red
+        default:
+            return .white
+        }
+    }
+    
+    private var buttonBackgroundColor: Color {
+        switch voiceManager.recordingState {
+        case .recording:
+            return Color.red.opacity(0.2)
+        case .processing:
+            return Color.blue.opacity(0.2)
+        case .completed:
+            return Color.green.opacity(0.2)
+        case .error:
+            return Color.red.opacity(0.2)
+        default:
+            return Color.white.opacity(0.1)
+        }
     }
 }
 
+// MARK: - Voice Location Manager
 
+@MainActor
+class VoiceLocationManager: ObservableObject {
+    @Published var recordingState: RecordingState = .idle
+    @Published var extractedState: String?
+    @Published var extractedDistrict: String?
+    @Published var errorMessage: String?
+    
+    private let azureOpenAIManager = AzureOpenAIManager()
+    private var audioRecorder: AVAudioRecorder?
+    private var recordingSession: AVAudioSession?
+    
+    enum RecordingState {
+        case idle
+        case recording
+        case processing
+        case completed
+        case error
+    }
+    
+    init() {
+        setupAudioSession()
+    }
+    
+    private func setupAudioSession() {
+        recordingSession = AVAudioSession.sharedInstance()
+        
+        do {
+            try recordingSession?.setCategory(.playAndRecord, mode: .default)
+            try recordingSession?.setActive(true)
+        } catch {
+            print("❌ Failed to setup audio session: \(error)")
+        }
+    }
+    
+    func toggleRecording() {
+        Task {
+            switch recordingState {
+            case .idle:
+                await startRecording()
+            case .recording:
+                await stopRecordingAndProcess()
+            default:
+                print("⚠️ Cannot toggle in current state: \(recordingState)")
+            }
+        }
+    }
+    
+    private func startRecording() async {
+        print("🎤 [VoiceLocationManager] Starting location recording...")
+        
+        // Request permission
+        let hasPermission = await requestMicrophonePermission()
+        guard hasPermission else {
+            recordingState = .error
+            errorMessage = "Microphone permission denied"
+            return
+        }
+        
+        // Setup recording
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let audioURL = documentsPath.appendingPathComponent("location_voice_recording.wav")
+        
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+        ]
+        
+        do {
+            audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
+            let started = audioRecorder?.record() ?? false
+            
+            if started {
+                recordingState = .recording
+                errorMessage = nil
+                print("✅ [VoiceLocationManager] Location recording started")
+            } else {
+                recordingState = .error
+                errorMessage = "Failed to start recording"
+            }
+        } catch {
+            recordingState = .error
+            errorMessage = "Recording setup failed: \(error.localizedDescription)"
+            print("❌ [VoiceLocationManager] Recording setup failed: \(error)")
+        }
+    }
+    
+    private func stopRecordingAndProcess() async {
+        print("⏹️ [VoiceLocationManager] Stopping recording and processing...")
+        
+        guard let recorder = audioRecorder, recorder.isRecording else {
+            recordingState = .error
+            errorMessage = "No active recording found"
+            return
+        }
+        
+        // Stop recording
+        recorder.stop()
+        recordingState = .processing
+        
+        // Get audio file
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let audioURL = documentsPath.appendingPathComponent("location_voice_recording.wav")
+        
+        do {
+            // Read audio data
+            let audioData = try Data(contentsOf: audioURL)
+            print("✅ [VoiceLocationManager] Audio file read successfully (\(audioData.count) bytes)")
+            
+            // Clean up file
+            try? FileManager.default.removeItem(at: audioURL)
+            
+            // Get transcription using Bhashini
+            let transcription = await getTranscriptionFromAudioData(audioData)
+            
+            // Extract location information using Azure OpenAI
+            let locationData = await extractLocationFromTranscription(transcription)
+            self.extractedState = locationData.state
+            self.extractedDistrict = locationData.district
+            
+            recordingState = .completed
+            print("✅ [VoiceLocationManager] Processing completed - State: '\(locationData.state ?? "none")', District: '\(locationData.district ?? "none")'")
+            
+        } catch {
+            recordingState = .error
+            errorMessage = "Processing failed: \(error.localizedDescription)"
+            print("❌ [VoiceLocationManager] Processing failed: \(error)")
+        }
+    }
+    
+    private func getTranscriptionFromAudioData(_ audioData: Data) async -> String {
+        do {
+            // Use existing Bhashini ASR infrastructure
+            let pipelineConfig = try await getBhashiniASRPipelineConfig()
+            let transcription = try await performASRInference(audioData: audioData, config: pipelineConfig)
+            
+            print("📝 [VoiceLocationManager] Transcription: '\(transcription)'")
+            return transcription
+            
+        } catch {
+            print("❌ [VoiceLocationManager] Transcription failed: \(error)")
+            return ""
+        }
+    }
+    
+    private func extractLocationFromTranscription(_ transcription: String) async -> (state: String?, district: String?) {
+        guard !transcription.isEmpty else { return (nil, nil) }
+        
+        let prompt = """
+        Extract the Indian state and district/city names from this Hindi/English speech and return them in JSON format.
+        
+        Speech: "\(transcription)"
+        
+        Instructions:
+        - Identify Indian state names (like Maharashtra, Delhi, Gujarat, etc.)
+        - Identify district/city names (like Mumbai, Pune, Nashik, etc.)
+        - Return in the appropriate language based on the input
+        - If Hindi input, return Hindi names
+        - If English input, return English names
+        
+        Return JSON with this exact structure:
+        {
+            "fullName": "extracted state name here or null",
+            "mobileNumber": "extracted district/city name here or null"
+        }
+        """
+        
+        do {
+            // Use Azure OpenAI to extract location data
+            let response = try await azureOpenAIManager.extractFormData(prompt: prompt)
+            
+            // The response should contain location data
+            // We'll use the fullName field for state and mobileNumber field for district as a workaround
+            let state = response.fullName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let district = response.mobileNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            print("📍 [VoiceLocationManager] Extracted - State: '\(state ?? "none")', District: '\(district ?? "none")'")
+            return (state?.isEmpty == false ? state : nil, district?.isEmpty == false ? district : nil)
+            
+        } catch {
+            print("❌ [VoiceLocationManager] Location extraction failed: \(error)")
+            return (nil, nil)
+        }
+    }
+    
+    // MARK: - Bhashini ASR Integration
+    
+    private func getBhashiniASRPipelineConfig() async throws -> [String: Any] {
+        let url = URL(string: "https://meity-auth.ulcacontrib.org/ulca/apis/v0/model/getModelsPipeline")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("OIMRGSrr1AxW0kNeQORBGn5DG7YBGw6Z-0MPnUROAvjTdwDChye9MRvdtU9RBrS_", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let requestBody: [String: Any] = [
+            "pipelineTasks": [
+                [
+                    "taskType": "asr",
+                    "config": [
+                        "language": [
+                            "sourceLanguage": "hi"
+                        ]
+                    ]
+                ]
+            ],
+            "pipelineRequestConfig": [
+                "pipelineId": "64392f96daac500b55c543cd"
+            ]
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw VoiceLocationError.configurationFailed
+        }
+        
+        return json
+    }
+    
+    private func performASRInference(audioData: Data, config: [String: Any]) async throws -> String {
+        let url = URL(string: "https://dhruva-api.bhashini.gov.in/services/inference/pipeline")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("OIMRGSrr1AxW0kNeQORBGn5DG7YBGw6Z-0MPnUROAvjTdwDChye9MRvdtU9RBrS_", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let base64Audio = audioData.base64EncodedString()
+        
+        guard let pipelineResponseConfig = config["pipelineResponseConfig"] as? [[String: Any]],
+              let firstConfig = pipelineResponseConfig.first,
+              let configArray = firstConfig["config"] as? [[String: Any]],
+              let firstConfigItem = configArray.first,
+              let serviceId = firstConfigItem["serviceId"] as? String,
+              let modelId = firstConfigItem["modelId"] as? String else {
+            throw VoiceLocationError.configurationFailed
+        }
+        
+        let requestBody: [String: Any] = [
+            "pipelineTasks": [
+                [
+                    "taskType": "asr",
+                    "config": [
+                        "modelId": modelId,
+                        "serviceId": serviceId,
+                        "language": [
+                            "sourceLanguage": "hi"
+                        ]
+                    ]
+                ]
+            ],
+            "inputData": [
+                "audio": [
+                    [
+                        "audioContent": base64Audio
+                    ]
+                ]
+            ]
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw VoiceLocationError.transcriptionFailed
+        }
+        
+        // Parse transcription
+        if let pipelineResponse = json["pipelineResponse"] as? [[String: Any]],
+           let firstResponse = pipelineResponse.first,
+           let output = firstResponse["output"] as? [[String: Any]],
+           let firstOutput = output.first,
+           let source = firstOutput["source"] as? String {
+            return source.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        throw VoiceLocationError.transcriptionFailed
+    }
+    
+    private func requestMicrophonePermission() async -> Bool {
+        return await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+    
+    func reset() {
+        recordingState = .idle
+        extractedState = nil
+        extractedDistrict = nil
+        errorMessage = nil
+        audioRecorder?.stop()
+        audioRecorder = nil
+    }
+}
 
-#Preview {
-    ZStack {
-        Color.black.ignoresSafeArea()
+// MARK: - Voice Location Errors
+
+enum VoiceLocationError: Error, LocalizedError {
+    case configurationFailed
+    case transcriptionFailed
+    case recordingFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .configurationFailed:
+            return "Configuration failed"
+        case .transcriptionFailed:
+            return "Transcription failed"
+        case .recordingFailed:
+            return "Recording failed"
+        }
+    }
+}
+
+// MARK: - Preview
+
+struct LocationInfoView_Previews: PreviewProvider {
+    static var previews: some View {
         LocationInfoView(coordinator: OnboardingCoordinator())
+            .environmentObject(LocalizationManager())
+            .background(Color.black)
     }
 } 

@@ -113,7 +113,10 @@
     "setup_complete": "Your account setup is complete!",
     "get_started": "Get Started",
     "back": "Back",
-    "voice_chatbot": "Voice Chatbot"
+    "voice_chatbot": "Voice Chatbot",
+    "speak_your_preferred_jurisdiction": "Speak your preferred jurisdiction",
+    "speak_your_location": "Speak Your Location",
+    "say_state_and_district": "Say your state and district name"
   },
   "hi": {
     "welcome": "स्वागत",
@@ -230,6 +233,9 @@
     "get_started": "शुरू करें",
     "back": "वापस",
     "select_preferred_jurisdiction": "अपना पसंदीदा न्यायाधिकार चुनें",
+    "speak_your_preferred_jurisdiction": "अपना पसंदीदा न्यायाधिकार बोलें",
+    "speak_your_location": "अपना स्थान बताएं",
+    "say_state_and_district": "राज्य और जिले का नाम बोलें",
     "enrolled_state": "राज्य",
     "select_your_state": "अपना राज्य चुनें",
     "enrolled_district": "जिला",
