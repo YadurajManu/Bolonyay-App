@@ -115,7 +115,7 @@ struct SplashView: View {
                     Text("BoloNyay")
                         .font(.system(size: 48, weight: .semibold, design: .default))
                         .foregroundColor(
-                            Color.white.opacity(0.8 + (viewModel.boloNyayColorIntensity * 0.2))
+                            Color.orange.opacity(0.8 + (viewModel.boloNyayColorIntensity * 0.2))
                         )
                         .tracking(2.5)
                         .opacity(viewModel.boloNyayOpacity)

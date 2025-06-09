@@ -58,22 +58,22 @@ struct LoginView: View {
                 
                 // Top illustration
                 VStack(spacing: 16) {
-                    if let uiImage = UIImage(named: "loginphoto") ?? UIImage(contentsOfFile: Bundle.main.path(forResource: "loginphoto", ofType: "jpeg") ?? "") {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 280)
-                            .padding(.horizontal, 40)
-                    } else {
-                        // Fallback placeholder
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(maxHeight: 280)
-                            .padding(.horizontal, 40)
-                            .overlay(
-                                Text("Login Image")
-                                    .foregroundColor(.gray)
-                            )
+                if let uiImage = UIImage(named: "loginphoto") ?? UIImage(contentsOfFile: Bundle.main.path(forResource: "loginphoto", ofType: "jpeg") ?? "") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 280)
+                        .padding(.horizontal, 40)
+                } else {
+                    // Fallback placeholder
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(maxHeight: 280)
+                        .padding(.horizontal, 40)
+                        .overlay(
+                            Text("Login Image")
+                                .foregroundColor(.gray)
+                        )
                     }
                     
                     // BoloNyay brand text beneath the photo

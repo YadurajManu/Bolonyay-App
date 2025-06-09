@@ -20,7 +20,7 @@ struct DashboardView: View {
     private var profileImageURL: String? {
         authManager.userProfile?.profileImageURL
     }
-    
+
     var body: some View {
         NavigationView {
             ZStack {

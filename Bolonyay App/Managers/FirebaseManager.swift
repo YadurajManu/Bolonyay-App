@@ -113,6 +113,11 @@ class FirebaseManager: ObservableObject {
     
     private init() {
         setupFirebase()
+        
+        // Initialize user state on launch
+        Task {
+            await initializeUserState()
+        }
     }
     
     // MARK: - Firebase Setup
@@ -142,10 +147,24 @@ class FirebaseManager: ObservableObject {
         }
     }
     
+    // MARK: - User State Initialization
+    
+    @MainActor
+    private func initializeUserState() async {
+        // If there's an authenticated Firebase Auth user, try to load their BoloNyayUser profile
+        if let authUser = Auth.auth().currentUser {
+            do {
+                let _ = try await loadUserById(authUser.uid)
+            } catch {
+                print("⚠️ Could not load existing user profile on launch: \(error)")
+            }
+        }
+    }
+    
     // MARK: - User Management
     
-    func createUser(email: String?, name: String, userType: BoloNyayUser.UserType, language: String) async throws -> BoloNyayUser {
-        let userId = UUID().uuidString
+    func createUser(email: String?, name: String, userType: BoloNyayUser.UserType, language: String, userId: String? = nil) async throws -> BoloNyayUser {
+        let userId = userId ?? UUID().uuidString
         
         let userData: [String: Any] = [
             "id": userId,
@@ -177,6 +196,71 @@ class FirebaseManager: ObservableObject {
     
     func getCurrentUser() -> BoloNyayUser? {
         return currentUser
+    }
+    
+    // MARK: - User Loading
+    
+    func loadUserById(_ userId: String) async throws -> BoloNyayUser? {
+        let document = try await db.collection("users").document(userId).getDocument()
+        
+        if document.exists, let data = document.data() {
+            let user = BoloNyayUser(
+                id: data["id"] as? String ?? userId,
+                email: data["email"] as? String,
+                name: data["name"] as? String ?? "BoloNyay User",
+                userType: BoloNyayUser.UserType(rawValue: data["userType"] as? String ?? "petitioner") ?? .petitioner,
+                createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                language: data["language"] as? String ?? "english"
+            )
+            
+            DispatchQueue.main.async {
+                self.currentUser = user
+            }
+            
+            print("✅ Loaded existing user: \(user.name) (\(userId))")
+            return user
+        }
+        
+        return nil
+    }
+    
+    func ensureUserFromAuth() async throws -> BoloNyayUser {
+        // First check if we already have a current user
+        if let existingUser = currentUser {
+            return existingUser
+        }
+        
+        // Check if there's an authenticated user in AuthenticationManager
+        if let authUser = Auth.auth().currentUser {
+            // Try to load existing BoloNyayUser
+            if let existingUser = try await loadUserById(authUser.uid) {
+                return existingUser
+            }
+            
+            // User is authenticated but doesn't have BoloNyayUser profile
+            // Create one from their auth profile
+            let user = try await createUser(
+                email: authUser.email,
+                name: authUser.displayName ?? "BoloNyay User",
+                userType: .petitioner, // Default to petitioner
+                language: LocalizationManager.shared.currentLanguage,
+                userId: authUser.uid
+            )
+            
+            print("✅ Created BoloNyayUser from authenticated profile: \(user.name)")
+            return user
+        }
+        
+        // No authenticated user - create anonymous user for basic functionality
+        let user = try await createUser(
+            email: nil,
+            name: UIDevice.current.name.isEmpty ? "BoloNyay User" : UIDevice.current.name,
+            userType: .petitioner,
+            language: LocalizationManager.shared.currentLanguage
+        )
+        
+        print("✅ Created anonymous user: \(user.name)")
+        return user
     }
     
     // MARK: - Case Management

@@ -112,7 +112,8 @@
     "welcome_bolonyay": "Welcome to BoloNyay",
     "setup_complete": "Your account setup is complete!",
     "get_started": "Get Started",
-    "back": "Back"
+    "back": "Back",
+    "voice_chatbot": "Voice Chatbot"
   },
   "hi": {
     "welcome": "स्वागत",
@@ -398,6 +399,7 @@
     "speak_your_info": "अपनी जानकारी बोलें",
     "auto_fill_forms": "फॉर्म अपने आप भरें",
     "processing_voice": "आवाज़ प्रोसेस की जा रही है...",
+    "voice_chatbot": "वॉयस चैटबॉट",
     "extracted_information": "निकाली गई जानकारी",
     "confirm_and_fill": "पुष्टि करें और भरें",
     "close": "बंद करें",

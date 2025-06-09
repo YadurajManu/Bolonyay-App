@@ -43,7 +43,13 @@ struct PractitionerDashboardView: View {
                 }
                 .tag(DashboardTab.newCase)
             
-
+            // Voice Chatbot Tab
+            VoiceChatbotTabView(isAnimated: animateContent)
+                .tabItem {
+                    Image(systemName: DashboardTab.voiceChatbot.icon)
+                    Text(localizationManager.text("voice_chatbot"))
+                }
+                .tag(DashboardTab.voiceChatbot)
             
             // Reports Tab
             ReportsTabView(isAnimated: animateContent)
@@ -123,6 +129,7 @@ struct PractitionerDashboardView: View {
 enum DashboardTab: String, CaseIterable {
     case home = "Home"
     case newCase = "New Case"
+    case voiceChatbot = "Voice Chatbot"
     case reports = "Reports"
     case help = "Help"
     
@@ -130,6 +137,7 @@ enum DashboardTab: String, CaseIterable {
         switch self {
         case .home: return "house.fill"
         case .newCase: return "plus.rectangle.fill"
+        case .voiceChatbot: return "mic.circle.fill"
         case .reports: return "chart.bar.fill"
         case .help: return "questionmark.circle.fill"
         }
@@ -139,6 +147,7 @@ enum DashboardTab: String, CaseIterable {
         switch self {
         case .home: return "Dashboard overview"
         case .newCase: return "File a new case"
+        case .voiceChatbot: return "Talk to Nyay Assistant"
         case .reports: return "View reports"
         case .help: return "Get help"
         }
@@ -259,6 +268,17 @@ struct NewCaseTabView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Voice Chatbot Tab View
+struct VoiceChatbotTabView: View {
+    let isAnimated: Bool
+    @EnvironmentObject var localizationManager: LocalizationManager
+    
+    var body: some View {
+        VoiceChatbotView()
+            .environmentObject(localizationManager)
     }
 }
 

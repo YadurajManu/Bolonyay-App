@@ -460,16 +460,11 @@ struct UserProfileManagementView: View {
     private func createBasicAccount() {
         Task {
             do {
-                let user = try await firebaseManager.createUser(
-                    email: nil,
-                    name: "BoloNyay User",
-                    userType: .petitioner,
-                    language: LocalizationManager.shared.currentLanguage
-                )
-                print("✅ Created basic account: \(user.name)")
+                let user = try await firebaseManager.ensureUserFromAuth()
+                print("✅ User account ready: \(user.name)")
                 dismiss()
             } catch {
-                print("❌ Failed to create basic account: \(error)")
+                print("❌ Failed to ensure user account: \(error)")
             }
         }
     }

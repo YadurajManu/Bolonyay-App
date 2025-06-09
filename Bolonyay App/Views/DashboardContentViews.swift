@@ -403,23 +403,11 @@ struct MyCasesContent: View {
     }
     
     private func ensureUserExists() async {
-        if firebaseManager.getCurrentUser() != nil {
-            return
-        }
-        
         do {
-            let deviceName = UIDevice.current.name
-            let userName = deviceName.isEmpty ? "BoloNyay User" : deviceName
-            
-            let user = try await firebaseManager.createUser(
-                email: nil,
-                name: userName,
-                userType: .petitioner,
-                language: localizationManager.currentLanguage
-            )
-            print("✅ Auto-created user for cases: \(user.name)")
+            let user = try await firebaseManager.ensureUserFromAuth()
+            print("✅ User ready for cases: \(user.name)")
         } catch {
-            print("❌ Failed to create user for cases: \(error)")
+            print("❌ Failed to ensure user for cases: \(error)")
         }
     }
     
@@ -1193,44 +1181,11 @@ class VoiceCaseFilingManager: ObservableObject {
     }
     
     private func ensureUserExists() async {
-        // Check if FirebaseManager user already exists
-        if firebaseManager.getCurrentUser() != nil {
-            return // User already exists
-        }
-        
-        // Try to get user from AuthenticationManager first
-        let authManager = await AuthenticationManager()
-        
-        if let authUser = await authManager.currentUser,
-           let userProfile = await authManager.userProfile {
-            
-            // Create FirebaseManager user from authenticated user
-            do {
-                let user = try await firebaseManager.createUser(
-                    email: userProfile.email.isEmpty ? nil : userProfile.email,
-                    name: userProfile.fullName.isEmpty ? "BoloNyay User" : userProfile.fullName,
-                    userType: userProfile.userType == .advocate ? .advocate : .petitioner,
-                    language: localizationManager.currentLanguage
-                )
-                print("✅ Created FirebaseManager user from authenticated profile: \(user.name)")
-                return
-            } catch {
-                print("❌ Failed to create user from auth profile: \(error)")
-            }
-        }
-        
-        // Fallback: Create basic user (this should trigger proper sign-up flow)
         do {
-            let userName = "BoloNyay User" // Don't use device name
-            let user = try await firebaseManager.createUser(
-                email: nil,
-                name: userName,
-                userType: .petitioner,
-                language: localizationManager.currentLanguage
-            )
-            print("⚠️ Created fallback user - User should complete proper registration: \(user.name)")
+            let user = try await firebaseManager.ensureUserFromAuth()
+            print("✅ User ready for voice case filing: \(user.name)")
         } catch {
-            print("❌ Failed to create fallback user: \(error)")
+            print("❌ Failed to ensure user for voice case filing: \(error)")
             DispatchQueue.main.async {
                 self.errorMessage = "Please complete user registration to continue"
                 self.caseFilingState = .error

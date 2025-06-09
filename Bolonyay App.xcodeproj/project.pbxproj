@@ -13,7 +13,6 @@
 		90B513CA2DF2F088005DCC2A /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 90B513C92DF2F088005DCC2A /* FirebaseFirestore */; };
 		90B513CD2DF2F0A3005DCC2A /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 90B513CC2DF2F0A3005DCC2A /* GoogleSignIn */; };
 		90B513CF2DF2F0A3005DCC2A /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 90B513CE2DF2F0A3005DCC2A /* GoogleSignInSwift */; };
-		90E080A92DF5431A009E3487 /* PSPDFKit in Frameworks */ = {isa = PBXBuildFile; productRef = 90E080A82DF5431A009E3487 /* PSPDFKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,7 +63,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				90B513CD2DF2F0A3005DCC2A /* GoogleSignIn in Frameworks */,
-				90E080A92DF5431A009E3487 /* PSPDFKit in Frameworks */,
 				90B513C42DF2F088005DCC2A /* FirebaseAnalytics in Frameworks */,
 				90B513CA2DF2F088005DCC2A /* FirebaseFirestore in Frameworks */,
 				90B513CF2DF2F0A3005DCC2A /* GoogleSignInSwift in Frameworks */,
@@ -141,7 +139,6 @@
 				90B513C92DF2F088005DCC2A /* FirebaseFirestore */,
 				90B513CC2DF2F0A3005DCC2A /* GoogleSignIn */,
 				90B513CE2DF2F0A3005DCC2A /* GoogleSignInSwift */,
-				90E080A82DF5431A009E3487 /* PSPDFKit */,
 			);
 			productName = "Bolonyay App";
 			productReference = 90B513982DF2EFEE005DCC2A /* Bolonyay App.app */;
@@ -228,7 +225,6 @@
 			packageReferences = (
 				90B513C22DF2F088005DCC2A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				90B513CB2DF2F0A3005DCC2A /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
-				90E080A72DF5431A009E3487 /* XCRemoteSwiftPackageReference "PSPDFKit-SP" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 90B513992DF2EFEE005DCC2A /* Products */;
@@ -619,14 +615,6 @@
 				minimumVersion = 8.0.0;
 			};
 		};
-		90E080A72DF5431A009E3487 /* XCRemoteSwiftPackageReference "PSPDFKit-SP" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/PSPDFKit/PSPDFKit-SP";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 14.9.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -659,11 +647,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 90B513CB2DF2F0A3005DCC2A /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
-		};
-		90E080A82DF5431A009E3487 /* PSPDFKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 90E080A72DF5431A009E3487 /* XCRemoteSwiftPackageReference "PSPDFKit-SP" */;
-			productName = PSPDFKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

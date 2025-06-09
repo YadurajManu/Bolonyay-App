@@ -1,5 +1,5 @@
 {
-  "originHash" : "6281b061270bf8b69a4168521bf8c71e66c45fd047a8da42a07a71be406ca90b",
+  "originHash" : "f26605caa55796c1b4a99e3dbcab289f7c209dffab4b967ad87d3789c478f7ee",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -143,15 +143,6 @@
       "state" : {
         "revision" : "540318ecedd63d883069ae7f1ed811a2df00b6ac",
         "version" : "2.4.0"
-      }
-    },
-    {
-      "identity" : "pspdfkit-sp",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/PSPDFKit/PSPDFKit-SP",
-      "state" : {
-        "revision" : "aa2f1e74375aa4078bc7e54ccdbf2fea55b7d150",
-        "version" : "14.9.0"
       }
     },
     {
