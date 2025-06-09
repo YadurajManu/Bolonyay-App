@@ -99,6 +99,12 @@ struct DashboardHomeContent: View {
     
     var body: some View {
         VStack(spacing: 32) {
+            // Recent Reports Section
+            RecentReportsSection(
+                animationDelay: 0.3,
+                isAnimated: isAnimated
+            )
+            
             // E-Filing Status Section
             VStack(spacing: 20) {
                 SectionHeader(
@@ -969,81 +975,130 @@ class VoiceCaseFilingManager: ObservableObject {
     
     private func parseCaseAnalysis(_ analysis: String) {
         print("🔍 Parsing case analysis response...")
-        print("📋 Full response: \(analysis)")
+        print("📋 Full response length: \(analysis.count) characters")
+        
+        // Wait for complete response before parsing
+        guard isResponseComplete(analysis) else {
+            print("⏳ Response appears incomplete, waiting...")
+            // Retry parsing after a delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.parseCaseAnalysis(analysis)
+            }
+            return
+        }
+        
+        print("✅ Response appears complete, starting parsing...")
         
         // Parse the AI response to extract case type, details, and questions
         let lines = analysis.components(separatedBy: .newlines)
         var currentSection = ""
         var questions: [String] = []
         var detailsLines: [String] = []
+        var caseTypeExtracted = ""
         
         for line in lines {
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
             
+            // Enhanced case type parsing
             if trimmedLine.uppercased().contains("CASE TYPE:") {
-                caseType = trimmedLine.replacingOccurrences(of: "CASE TYPE:", with: "", options: .caseInsensitive)
+                caseTypeExtracted = trimmedLine.replacingOccurrences(of: "CASE TYPE:", with: "", options: .caseInsensitive)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 currentSection = ""
-            } else if trimmedLine.uppercased().contains("CASE DETAILS:") {
+                print("📝 Found case type: \(caseTypeExtracted)")
+            } 
+            // Enhanced case details parsing
+            else if trimmedLine.uppercased().contains("CASE DETAILS:") {
                 currentSection = "details"
-            } else if trimmedLine.uppercased().contains("QUESTIONS:") {
+                print("📝 Starting case details section")
+            } 
+            // Enhanced questions parsing
+            else if trimmedLine.uppercased().contains("QUESTIONS:") || trimmedLine.uppercased().contains("STRATEGIC QUESTIONS:") {
                 currentSection = "questions"
-            } else if !trimmedLine.isEmpty {
+                print("📝 Starting questions section")
+            } 
+            // Content parsing based on current section
+            else if !trimmedLine.isEmpty {
                 if currentSection == "details" {
                     detailsLines.append(trimmedLine)
                 } else if currentSection == "questions" {
-                    // Accept various question formats
-                    if trimmedLine.hasPrefix("-") || 
-                       trimmedLine.hasPrefix("•") || 
-                       trimmedLine.hasPrefix("1.") ||
-                       trimmedLine.hasPrefix("2.") ||
-                       trimmedLine.contains("आपका") ||
-                       trimmedLine.contains("क्या") ||
-                       trimmedLine.contains("कौन") ||
-                       trimmedLine.contains("कब") ||
-                       trimmedLine.contains("कहाँ") ||
-                       trimmedLine.contains("कैसे") ||
-                       trimmedLine.contains("What") ||
-                       trimmedLine.contains("Who") ||
-                       trimmedLine.contains("When") ||
-                       trimmedLine.contains("Where") ||
-                       trimmedLine.contains("How") {
-                        
-                        let cleanQuestion = trimmedLine
-                            .replacingOccurrences(of: "^[-•\\d\\.\\s]+", with: "", options: .regularExpression)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        
-                        if cleanQuestion.count > 10 { // Only add substantial questions
+                    // Enhanced question detection
+                    if isValidQuestion(trimmedLine) {
+                        let cleanQuestion = cleanQuestionText(trimmedLine)
+                        if cleanQuestion.count > 15 { // More strict minimum length
                             questions.append(cleanQuestion)
+                            print("📝 Added question: \(cleanQuestion.prefix(50))...")
                         }
+                    }
+                } else if currentSection == "" && caseTypeExtracted.isEmpty {
+                    // Try to extract case type from content if header parsing failed
+                    if trimmedLine.lowercased().contains("criminal") || trimmedLine.lowercased().contains("civil") || 
+                       trimmedLine.lowercased().contains("family") || trimmedLine.lowercased().contains("property") {
+                        caseTypeExtracted = trimmedLine
+                        print("📝 Extracted case type from content: \(caseTypeExtracted)")
                     }
                 }
             }
         }
         
-        // Join details if multiple lines
-        if !detailsLines.isEmpty {
-            caseDetails = detailsLines.joined(separator: " ")
-        }
-        
+        // Finalize parsing results
+        caseType = caseTypeExtracted
+        caseDetails = detailsLines.isEmpty ? "Case details will be determined based on the conversation." : detailsLines.joined(separator: " ")
         filingQuestions = questions
         userResponses = Array(repeating: "", count: questions.count)
         
-        print("✅ Parsed case analysis:")
-        print("   Case Type: \(caseType)")
-        print("   Case Details: \(caseDetails)")
+        print("✅ Final parsing results:")
+        print("   Case Type: '\(caseType)'")
+        print("   Case Details length: \(caseDetails.count)")
         print("   Questions Count: \(questions.count)")
-        print("   Questions: \(questions)")
         
-        // IMPORTANT: Set the state to questionsReady after parsing
-        if !questions.isEmpty && !caseType.isEmpty {
+        // Enhanced validation with fallback options
+        if questions.count >= 5 && !caseType.isEmpty {
             caseFilingState = .questionsReady
             print("✅ Case filing state set to questionsReady")
+        } else if questions.count >= 3 {
+            // Accept with fewer questions but warn
+            caseType = caseType.isEmpty ? "General Legal Matter" : caseType
+            caseFilingState = .questionsReady
+            print("⚠️ Proceeding with \(questions.count) questions")
         } else {
-            print("❌ Parsing failed - missing questions or case type")
+            print("❌ Parsing failed - insufficient questions (\(questions.count)) or missing case type")
             caseFilingState = .error
-            errorMessage = "Failed to extract case information from AI response"
+            errorMessage = "Could not extract sufficient case information. Please try again with more details about your legal issue."
         }
+    }
+    
+    private func isResponseComplete(_ response: String) -> Bool {
+        // Check for completion indicators
+        let completionMarkers = [
+            "QUESTIONS:",
+            "STRATEGIC QUESTIONS:",
+            "questions in Hindi",
+            "case preparation",
+            "legal filing"
+        ]
+        
+        let hasCompletionMarker = completionMarkers.contains { response.lowercased().contains($0.lowercased()) }
+        let hasMinimumLength = response.count > 500
+        let hasQuestionPatterns = response.contains("-") || response.contains("आपका") || response.contains("क्या")
+        
+        return hasCompletionMarker && hasMinimumLength && hasQuestionPatterns
+    }
+    
+    private func isValidQuestion(_ text: String) -> Bool {
+        let questionIndicators = [
+            "-", "•", "1.", "2.", "3.", "4.", "5.",
+            "आपका", "आपकी", "आपको", "आपने",
+            "क्या", "कौन", "कब", "कहाँ", "कैसे", "कितना",
+            "What", "Who", "When", "Where", "How", "Which"
+        ]
+        
+        return questionIndicators.contains { text.contains($0) }
+    }
+    
+    private func cleanQuestionText(_ text: String) -> String {
+        return text
+            .replacingOccurrences(of: "^[-•\\d\\.\\s]+", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     func submitCaseResponse(_ response: String, for questionIndex: Int) {
@@ -1512,33 +1567,11 @@ struct VoiceCaseFilingView: View {
             
             // AI Analysis Display
             if !manager.caseAnalysis.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.green)
-                        
-                        Text("Legal Expert Response")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                    }
-                    
-                    Text(manager.caseAnalysis)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.03))
-                                .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                        )
-                }
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .scale.combined(with: .opacity)
-                ))
+                FormattedLegalResponseView(response: manager.caseAnalysis)
+                    .transition(.asymmetric(
+                        insertion: .scale.combined(with: .opacity).combined(with: .move(edge: .bottom)),
+                        removal: .scale.combined(with: .opacity)
+                    ))
             }
             
             // Error Display
@@ -1839,29 +1872,161 @@ struct CaseFilingView: View {
 // MARK: - Case Filing Sub-Views
 
 struct AnalyzingView: View {
+    @State private var animationProgress: Double = 0.0
+    @State private var currentDot = 0
+    @State private var showText = false
+    
     var body: some View {
-        VStack(spacing: 20) {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                .scaleEffect(1.5)
-            
-            VStack(spacing: 8) {
-                Text("Analyzing Your Case")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
+        VStack(spacing: 32) {
+            // Animated Clock/Loading indicator
+            ZStack {
+                // Outer ring
+                Circle()
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 4)
+                    .frame(width: 120, height: 120)
                 
-                Text("Our AI is reviewing your conversation to identify case type and prepare filing questions...")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .multilineTextAlignment(.center)
+                // Animated progress ring
+                Circle()
+                    .trim(from: 0, to: animationProgress)
+                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 120, height: 120)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: animationProgress)
+                
+                // Inner elements
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.orange)
+                        .scaleEffect(showText ? 1.0 : 0.8)
+                        .animation(.spring(duration: 0.8, bounce: 0.4).repeatForever(autoreverses: true), value: showText)
+                    
+                    Text("AI")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.orange)
+                        .opacity(showText ? 1.0 : 0.6)
+                        .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: showText)
+                }
+            }
+            
+            // Status text with animated dots
+            VStack(spacing: 16) {
+                HStack(spacing: 4) {
+                    Text("विश्लेषण जारी है / Analyzing Your Case")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    // Animated dots
+                    HStack(spacing: 2) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(currentDot == index ? 1.3 : 0.8)
+                                .opacity(currentDot == index ? 1.0 : 0.5)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.6), value: currentDot)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("🧠 हमारी AI आपकी बातचीत का विश्लेषण कर रही है")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                    
+                    Text("📋 मामले का प्रकार और कानूनी प्रश्न तैयार कर रही है")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                    
+                    Text("⚖️ कृपया धैर्य रखें, यह कुछ समय ले सकता है...")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .italic()
+                }
+                .opacity(showText ? 1.0 : 0.7)
+                .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: showText)
+            }
+            
+            // Progress stages
+            VStack(spacing: 12) {
+                ProgressStageView(
+                    title: "पारस्परिक संवाद का विश्लेषण / Conversation Analysis",
+                    isActive: true,
+                    isComplete: false
+                )
+                
+                ProgressStageView(
+                    title: "कानूनी मामले की पहचान / Legal Case Identification",
+                    isActive: animationProgress > 0.3,
+                    isComplete: false
+                )
+                
+                ProgressStageView(
+                    title: "रणनीतिक प्रश्न तैयार करना / Strategic Questions Preparation",
+                    isActive: animationProgress > 0.6,
+                    isComplete: false
+                )
             }
         }
-        .padding(40)
+        .padding(32)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.03))
-                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.black.opacity(0.4))
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1.5)
+                .shadow(color: Color.orange.opacity(0.2), radius: 10, x: 0, y: 5)
         )
+        .onAppear {
+            // Start animations
+            animationProgress = 1.0
+            showText = true
+            
+            // Animate dots
+            Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
+                withAnimation {
+                    currentDot = (currentDot + 1) % 3
+                }
+            }
+        }
+    }
+}
+
+struct ProgressStageView: View {
+    let title: String
+    let isActive: Bool
+    let isComplete: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(isComplete ? Color.green : (isActive ? Color.orange : Color.gray.opacity(0.3)))
+                    .frame(width: 20, height: 20)
+                
+                if isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                } else if isActive {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(isActive ? 1.2 : 1.0)
+                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isActive)
+                }
+            }
+            
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isActive ? .white : .white.opacity(0.6))
+            
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .opacity(isActive ? 1.0 : 0.6)
+        .animation(.easeInOut(duration: 0.5), value: isActive)
     }
 }
 
@@ -1870,6 +2035,12 @@ struct QuestionnaireView: View {
     @Binding var currentQuestionIndex: Int
     @Binding var answerText: String
     @Binding var isAnsweringVoice: Bool
+    
+    private func showQuestionRecordingInterface(for index: Int) {
+        withAnimation(.spring(duration: 0.5, bounce: 0.3)) {
+            currentQuestionIndex = index
+        }
+    }
     
     var body: some View {
         VStack(spacing: 24) {
@@ -1908,33 +2079,33 @@ struct QuestionnaireView: View {
                 }
             }
             
-            // Questions Section
+            // Enhanced Questions Section
             if !manager.filingQuestions.isEmpty {
-                VStack(spacing: 16) {
-                    HStack {
-                        Text("Additional Information Required")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                        
-                        Text("\(manager.userResponses.filter { !$0.isEmpty }.count)/\(manager.filingQuestions.count)")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.orange)
+                ProfessionalQuestionListView(
+                    questions: manager.filingQuestions,
+                    currentQuestionIndex: currentQuestionIndex,
+                    onQuestionTap: { index in
+                        currentQuestionIndex = index
+                        // Show question recording interface
+                        showQuestionRecordingInterface(for: index)
                     }
-                    
-                    // Question Cards
-                    ForEach(Array(manager.filingQuestions.enumerated()), id: \.offset) { index, question in
-                        QuestionCard(
-                            question: question,
-                            answer: index < manager.userResponses.count ? manager.userResponses[index] : "",
-                            isAnswered: index < manager.userResponses.count && !manager.userResponses[index].isEmpty,
-                            questionNumber: index + 1,
-                            onAnswerSubmit: { answer in
-                                manager.submitCaseResponse(answer, for: index)
+                )
+                
+                // Current Question Recording Interface
+                if currentQuestionIndex < manager.filingQuestions.count {
+                    CurrentQuestionRecordingView(
+                        question: manager.filingQuestions[currentQuestionIndex],
+                        questionNumber: currentQuestionIndex + 1,
+                        totalQuestions: manager.filingQuestions.count,
+                        answer: currentQuestionIndex < manager.userResponses.count ? manager.userResponses[currentQuestionIndex] : "",
+                        onAnswerSubmit: { answer in
+                            manager.submitCaseResponse(answer, for: currentQuestionIndex)
+                            // Move to next question
+                            if currentQuestionIndex < manager.filingQuestions.count - 1 {
+                                currentQuestionIndex += 1
                             }
-                        )
-                    }
+                        }
+                    )
                 }
             }
             
@@ -3214,6 +3385,230 @@ struct ReportsContent: View {
     
     var body: some View {
         ReportsView()
+    }
+}
+
+// MARK: - Recent Reports Section
+struct RecentReportsSection: View {
+    let animationDelay: Double
+    let isAnimated: Bool
+    @StateObject private var reportsManager = ReportsManager.shared
+    @EnvironmentObject var localizationManager: LocalizationManager
+    @State private var showingAllReports = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            SectionHeader(
+                title: "📄 Recent Reports",
+                subtitle: "Quick access to your saved documents",
+                animationDelay: animationDelay,
+                isAnimated: isAnimated
+            )
+            
+            if reportsManager.savedReports.isEmpty {
+                EmptyReportsCard(animationDelay: animationDelay + 0.2, isAnimated: isAnimated)
+            } else {
+                VStack(spacing: 12) {
+                    // Show up to 3 recent reports
+                    ForEach(Array(reportsManager.savedReports.prefix(3).enumerated()), id: \.element.id) { index, report in
+                        CompactReportCard(
+                            report: report,
+                            animationDelay: animationDelay + 0.2 + Double(index) * 0.1,
+                            isAnimated: isAnimated
+                        )
+                    }
+                    
+                    // View All Button
+                    if reportsManager.savedReports.count > 3 {
+                        Button(action: {
+                            showingAllReports = true
+                        }) {
+                            HStack(spacing: 8) {
+                                Text("View All \(reportsManager.savedReports.count) Reports")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white.opacity(0.05))
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
+                        }
+                        .opacity(isAnimated ? 1.0 : 0.0)
+                        .offset(y: isAnimated ? 0 : 10)
+                        .animation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay + 0.6), value: isAnimated)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingAllReports) {
+            NavigationView {
+                EnhancedSavedReportsView()
+                    .environmentObject(localizationManager)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showingAllReports = false
+                            }
+                            .foregroundColor(.white)
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
+    }
+}
+
+struct EmptyReportsCard: View {
+    let animationDelay: Double
+    let isAnimated: Bool
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text.badge.plus")
+                .font(.system(size: 40, weight: .medium))
+                .foregroundColor(.white.opacity(0.3))
+            
+            VStack(spacing: 8) {
+                Text("No Reports Yet")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Text("Generate your first PDF report to see it here")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.03))
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .opacity(isAnimated ? 1.0 : 0.0)
+        .offset(y: isAnimated ? 0 : 20)
+        .animation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay), value: isAnimated)
+    }
+}
+
+struct CompactReportCard: View {
+    let report: ReportsManager.SavedReport
+    let animationDelay: Double
+    let isAnimated: Bool
+    @State private var showingPreview = false
+    @State private var showingShareSheet = false
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // File Icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(getTypeColor().opacity(0.2))
+                    .frame(width: 32, height: 32)
+                
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(getTypeColor())
+            }
+            
+            // Report Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(report.caseNumber)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    Text(report.timeSinceCreation)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                    
+                    Circle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 2, height: 2)
+                    
+                    Text(report.formattedFileSize)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            
+            Spacer()
+            
+            // Quick Actions
+            HStack(spacing: 8) {
+                Button(action: {
+                    showingPreview = true
+                }) {
+                    Image(systemName: "eye.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(Color.blue.opacity(0.2))
+                        )
+                }
+                
+                Button(action: {
+                    showingShareSheet = true
+                }) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16))
+                        .foregroundColor(.green)
+                        .padding(8)
+                        .background(
+                            Circle()
+                                .fill(Color.green.opacity(0.2))
+                        )
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.05))
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .opacity(isAnimated ? 1.0 : 0.0)
+        .offset(y: isAnimated ? 0 : 10)
+        .animation(.spring(duration: 0.8, bounce: 0.3).delay(animationDelay), value: isAnimated)
+        .sheet(isPresented: $showingPreview) {
+            if let fileURL = ReportsManager.shared.shareReport(report) {
+                PDFPreviewView(pdfURL: fileURL)
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            if let fileURL = ReportsManager.shared.shareReport(report) {
+                ShareSheet(items: [fileURL])
+            }
+        }
+    }
+    
+    private func getTypeColor() -> Color {
+        let caseTypeLower = report.caseType.lowercased()
+        if caseTypeLower.contains("criminal") {
+            return .red
+        } else if caseTypeLower.contains("civil") {
+            return .blue
+        } else if caseTypeLower.contains("family") {
+            return .purple
+        } else if caseTypeLower.contains("consumer") {
+            return .orange
+        } else if caseTypeLower.contains("labor") {
+            return .green
+        } else {
+            return .cyan
+        }
     }
 }
 

@@ -61,6 +61,22 @@ class PDFGenerationManager: ObservableObject {
                 self.isGeneratingPDF = false
             }
             
+            // Save PDF to ReportsManager for future downloads
+            Task {
+                do {
+                    let template = caseTemplate.displayName
+                    let savedReport = try await ReportsManager.shared.savePDFReport(
+                        pdfURL: pdfURL,
+                        caseRecord: caseRecord,
+                        template: template,
+                        pageCount: estimatePageCount(content: structuredContent)
+                    )
+                    print("✅ PDF saved to reports: \(savedReport.reportTitle)")
+                } catch {
+                    print("⚠️ Failed to save PDF to reports: \(error)")
+                }
+            }
+            
             print("✅ PDF generated successfully: \(pdfURL.lastPathComponent)")
             return pdfURL
             
@@ -1206,6 +1222,15 @@ class PDFGenerationManager: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         return formatter.string(from: date)
+    }
+    
+    private func estimatePageCount(content: StructuredLegalContent) -> Int {
+        // Estimate pages based on content length
+        let totalContent = content.caseSummary + content.keyFacts.joined() + 
+                          content.legalIssues.joined() + content.reliefSought.joined()
+        let charactersPerPage = 2500 // Rough estimate
+        let estimatedPages = max(1, totalContent.count / charactersPerPage)
+        return min(estimatedPages, 10) // Cap at 10 pages for safety
     }
 }
 

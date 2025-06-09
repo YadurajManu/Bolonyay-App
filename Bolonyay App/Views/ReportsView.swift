@@ -15,6 +15,7 @@ struct ReportsView: View {
     
     enum ReportsTab: String, CaseIterable {
         case overview = "overview"
+        case savedReports = "saved_reports"
         case cases = "cases"
         case sessions = "sessions"
         case analytics = "analytics"
@@ -22,6 +23,7 @@ struct ReportsView: View {
         var icon: String {
             switch self {
             case .overview: return "chart.bar.fill"
+            case .savedReports: return "doc.text.fill"
             case .cases: return "folder.fill"
             case .sessions: return "message.fill"
             case .analytics: return "chart.pie.fill"
@@ -31,6 +33,7 @@ struct ReportsView: View {
         func localizedName(_ localizationManager: LocalizationManager) -> String {
             switch self {
             case .overview: return localizationManager.text("overview")
+            case .savedReports: return "Saved Reports"
             case .cases: return localizationManager.text("my_cases")
             case .sessions: return localizationManager.text("sessions")
             case .analytics: return localizationManager.text("analytics")
@@ -60,6 +63,10 @@ struct ReportsView: View {
                                 isAnimated: isAnimated,
                                 localizationManager: localizationManager
                             )
+                            
+                        case .savedReports:
+                            EnhancedSavedReportsView()
+                                .environmentObject(localizationManager)
                             
                         case .cases:
                             ElegantCasesContent(
