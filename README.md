@@ -127,5 +127,6 @@ The Bolonyay App codebase is organized to promote clarity and separation of conc
             *   `SplashView.swift`: The initial view shown when the app launches, possibly for branding or initial data loading.
 
 *   **`Bolonyay App.xcodeproj/`**: The Xcode project file. This file manages all the project settings, configurations, targets, and file references. It's what you open in Xcode to work on the app.
-![image](https://github.com/user-attachments/assets/fbccfa90-1c8e-4afb-8ee9-b314c49aa1eb)
+<img width="1521" alt="Screenshot 2025-07-03 at 6 58 48 PM" src="https://github.com/user-attachments/assets/262d0fb9-a011-46ed-8d9e-3e0e9bee2e49" />
+
 
