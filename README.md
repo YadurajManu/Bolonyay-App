@@ -186,7 +186,7 @@ If you are authorized, please follow these general guidelines:
 
 This project is proprietary and confidential. All rights reserved.
 
-Copyright (c) 2023 Ayush Singh
+Copyright (c) 2025 Yaduraj Singh
 
 ## Contact
 
