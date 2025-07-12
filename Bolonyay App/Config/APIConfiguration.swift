@@ -67,31 +67,3 @@ extension APIConfiguration {
     }
 }
 
-// MARK: - Usage Instructions
-/*
- 
- SETUP INSTRUCTIONS:
- 
-
- ✅ Azure OpenAI is already configured using existing app credentials
- 
- 🔑 Only Bhashini API Key needs configuration:
-    1. Visit: https://bhashini.gov.in/
-    2. Register for developer access to get API key
-    3. Replace "YOUR_BHASHINI_API_KEY_HERE" with your actual key
-    4. Use models: 
-       - ASR: ai4bharat/conformer_hi (Hindi speech recognition)
-       - TTS: ai4bharat/indictrans_v2_hi_en (Hindi text-to-speech)
- 
- 🧪 Test Configuration:
-    - Build and run the app
-    - Go to Voice Chatbot tab (न्याय)
-    - The app will validate configuration on first use
- 
- IMPORTANT NOTES:
- - Azure OpenAI (GPT-4.1) is already configured from LocalizationManager
- - Only Bhashini API key is required for ASR/TTS functionality
-         - AI responses are optimized for comprehensive legal guidance
- - Voice chatbot supports Hindi voice-to-voice conversations
- 
- */ 
